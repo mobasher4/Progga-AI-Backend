@@ -2,6 +2,7 @@ import type { Prisma, TutorSession } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dayKey, dayStartUtc } from "../../lib/dates";
 import { badRequest, notFound, tooMany } from "../../lib/errors";
+import { logger } from "../../lib/logger";
 import { award, type Rewards } from "../gamification/service";
 import {
   applyEvaluation,
@@ -119,7 +120,11 @@ export async function startSession(
     where: { studentId, createdAt: { gte: dayStartUtc(dayKey()) } },
   });
   if (startedToday >= user.dailyTutorLimit) {
-    throw tooMany(`You've explored ${user.dailyTutorLimit} problems today — amazing! Take a break, watch a lesson, or play Quiz Arena. 🍌`);
+    throw tooMany(
+      user.language === "bn"
+        ? `আজ তুমি ${user.dailyTutorLimit}টা প্রশ্ন নিয়ে কাজ করেছ — দারুণ! এবার একটু বিরতি নাও, একটা ভিডিও দেখো বা কুইজ খেলো। 🍌`
+        : `You've explored ${user.dailyTutorLimit} problems today — amazing! Take a break, watch a lesson, or play Quiz Arena. 🍌`,
+    );
   }
 
   if (!input.question.trim() && !input.image) throw badRequest("Type a question or add a photo");
@@ -147,6 +152,7 @@ export async function startSession(
       subject: input.subject,
       grade: profile.grade,
       mode: plan.mode,
+      language: user.language,
       // a fact is answered immediately, so the session is complete from the start
       status: plan.mode === "fact" ? "solved" : "active",
       title: plan.title || "New adventure",
@@ -159,7 +165,7 @@ export async function startSession(
   });
 
   await prisma.tutorMessage.create({
-    data: { sessionId: session.id, role: "student", kind: "text", content: screened.text || "📷 (sent a photo of the problem)" },
+    data: { sessionId: session.id, role: "student", kind: "text", content: screened.text || (user.language === "bn" ? "📷 (প্রশ্নের ছবি পাঠিয়েছি)" : "📷 (sent a photo of the problem)") },
   });
   await saveMessages(session.id, "tutor", openingMessages(plan));
   return { blocked: false as const, session: await getSession(studentId, session.id) };
@@ -190,10 +196,26 @@ export async function listSessions(studentId: string, limit = 30) {
 
 type ActionResult = { session: Awaited<ReturnType<typeof getSession>>; newMessages: ReturnType<typeof publicMessage>[]; rewards: Rewards | null };
 
+/**
+ * The student switched language mid-session: translate the rest of the hidden
+ * plan once (steps, hints, "why"), so everything after the switch matches.
+ */
+async function inLanguage(s: TutorSession, language: string): Promise<TutorSession> {
+  if (s.language === language || s.status !== "active") return s;
+  try {
+    const plan = await tutorLLM.translatePlan(s.plan as unknown as Plan, language);
+    return await prisma.tutorSession.update({ where: { id: s.id }, data: { plan: plan as unknown as Prisma.InputJsonValue, language } });
+  } catch (err) {
+    logger.warn({ err: (err as Error).message, sessionId: s.id }, "Plan translation failed; continuing in the original language");
+    return s;
+  }
+}
+
 export async function reply(studentId: string, id: string, raw: string): Promise<ActionResult> {
-  const s = await loadOwned(studentId, id);
+  let s = await loadOwned(studentId, id);
   if (s.status !== "active") throw badRequest("This adventure is finished — start a new one!");
   const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
+  s = await inLanguage(s, user.language);
 
   const screened = screenInput(raw, user.language);
   const studentMsg = await saveMessages(id, "student", [{ kind: "text", content: screened.text, stepIndex: s.currentStep }]);
@@ -219,7 +241,7 @@ export async function reply(studentId: string, id: string, raw: string): Promise
     reply: screened.text,
   });
 
-  const t = applyEvaluation(state, evaluation);
+  const t = applyEvaluation(state, evaluation, user.language);
   if (t.safetyCategory === "wellbeing") await logSafety(studentId, "wellbeing", screened.text);
 
   const gained = t.xp.reduce((sum, e) => sum + e.amount, 0);
@@ -231,7 +253,8 @@ export async function reply(studentId: string, id: string, raw: string): Promise
 }
 
 export async function hint(studentId: string, id: string): Promise<ActionResult> {
-  const s = await loadOwned(studentId, id);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId }, select: { language: true } });
+  const s = await inLanguage(await loadOwned(studentId, id), user.language);
   const r = nextHint(toState(s));
   if (!r) throw badRequest("No more hints for this step — try your best guess, or ask Progga to show this step.");
   await persistState(id, r.state, 0);
@@ -240,8 +263,9 @@ export async function hint(studentId: string, id: string): Promise<ActionResult>
 }
 
 export async function reveal(studentId: string, id: string): Promise<ActionResult> {
-  const s = await loadOwned(studentId, id);
-  const t = revealStep(toState(s));
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId }, select: { language: true } });
+  const s = await inLanguage(await loadOwned(studentId, id), user.language);
+  const t = revealStep(toState(s), user.language);
   if (!t) throw badRequest("Try the hints first — you might crack it! 💪");
   const gained = t.xp.reduce((sum, e) => sum + e.amount, 0);
   await persistState(id, t.state, gained);

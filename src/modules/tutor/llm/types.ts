@@ -29,4 +29,6 @@ export interface TutorLLM {
   readonly supportsImages: boolean;
   plan(input: PlanInput): Promise<Plan>;
   evaluate(input: EvalInput): Promise<Evaluation>;
+  /** Re-localize an existing plan when the student switches language mid-session. */
+  translatePlan(plan: Plan, language: string): Promise<Plan>;
 }

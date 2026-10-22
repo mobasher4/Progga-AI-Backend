@@ -3,9 +3,9 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { env } from "../../../config/env";
 import { HttpError } from "../../../lib/errors";
 import { logger } from "../../../lib/logger";
-import { EVALUATOR_SYSTEM, PLANNER_SYSTEM } from "../prompts";
+import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, TRANSLATOR_SYSTEM } from "../prompts";
 import { EvalSchema, PlanSchema, normalizePlan, type Evaluation, type Plan } from "../schemas";
-import { evalText, planText, refusedPlan, offTrackEvaluation } from "./context";
+import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
 import type { EvalInput, PlanInput, TutorLLM } from "./types";
 
 // Server-side fallback: if a safety classifier declines, the API re-runs the
@@ -58,6 +58,22 @@ export class AnthropicTutor implements TutorLLM {
 
     if (res.stop_reason === "refusal" || !res.parsed_output) return offTrackEvaluation(input.step);
     return res.parsed_output;
+  }
+
+  async translatePlan(plan: Plan, language: string): Promise<Plan> {
+    const res = await this.call(() =>
+      this.client.beta.messages.parse({
+        model: this.model,
+        max_tokens: 16000,
+        betas: [FALLBACK_BETA],
+        fallbacks: "default",
+        system: [{ type: "text", text: TRANSLATOR_SYSTEM, cache_control: { type: "ephemeral" } }],
+        output_config: { effort: "low", format: zodOutputFormat(PlanSchema) },
+        messages: [{ role: "user", content: translateText(plan, language) }],
+      }),
+    );
+    if (res.stop_reason === "refusal" || !res.parsed_output) return plan;
+    return mergeTranslation(plan, normalizePlan(res.parsed_output));
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

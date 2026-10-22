@@ -16,6 +16,11 @@ export class MockTutor implements TutorLLM {
     return linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q);
   }
 
+  /** The offline tutor only speaks English, so its plans stay as they are. */
+  async translatePlan(plan: Plan): Promise<Plan> {
+    return plan;
+  }
+
   async evaluate({ step, reply }: EvalInput): Promise<Evaluation> {
     const r = reply.toLowerCase().trim();
     if (/(just )?(tell|give|show) me (the )?(answer|solution)|i don'?t know|idk|pari na|jani na/.test(r)) {

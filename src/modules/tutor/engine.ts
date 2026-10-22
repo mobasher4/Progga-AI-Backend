@@ -63,8 +63,36 @@ export function canRevealStep(state: SessionState): boolean {
 
 const clone = (s: SessionState): SessionState => ({ ...s, progress: s.progress.map((p) => ({ ...p })) });
 
+// Fixed tutor lines, in the student's chosen language (AI-written text is already localized by the prompt).
+const TEXT = {
+  en: {
+    solvedClean: "🎉 You solved the WHOLE thing without a single hint. That's real thinking power!",
+    solved: "🎉 You did it! Every step was your own brainwork.",
+    practice: "**Try one on your own:**",
+    leakGuard: "Let's figure this part out together — you're closer than you think!",
+    reveal: (expected: string, why: string) => `Here's this step: **${expected}**\n\n💡 ${why}\n\nNo worries — now you've seen how it works. Let's keep going!`,
+  },
+  bn: {
+    solvedClean: "🎉 একটাও হিন্ট ছাড়াই তুমি পুরোটা সমাধান করেছ। এটাই আসল চিন্তার শক্তি!",
+    solved: "🎉 তুমি পেরেছ! প্রতিটা ধাপ তোমার নিজের মাথা খাটিয়ে করা।",
+    practice: "**এবার নিজে একটা চেষ্টা করো:**",
+    leakGuard: "চলো এই অংশটা একসাথে বের করি — তুমি যতটা ভাবছ তার চেয়ে অনেক কাছে আছ!",
+    reveal: (expected: string, why: string) => `এই ধাপটা হলো: **${expected}**\n\n💡 ${why}\n\nচিন্তা নেই — এখন তুমি দেখলে কীভাবে কাজ করে। চলো এগিয়ে যাই!`,
+  },
+  mix: {
+    solvedClean: "🎉 Ekta hint chara-i tumi puro ta solve korecho. Eta-i asol thinking power!",
+    solved: "🎉 Tumi perecho! Protiti step tomar nijer brainwork.",
+    practice: "**Ebar nije ekta try koro:**",
+    leakGuard: "Cholo ei part ta ekshathe ber kori — tumi onek kache acho!",
+    reveal: (expected: string, why: string) => `Ei step ta holo: **${expected}**\n\n💡 ${why}\n\nChinta nai — ekhon tumi dekhle kivabe kaj kore. Cholo egiye jai!`,
+  },
+};
+type Lang = keyof typeof TEXT;
+const text = (lang: string) => TEXT[(lang in TEXT ? lang : "en") as Lang];
+
 /** Moves to the next step or finishes the session. Shared by "correct" and "reveal". */
-function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp"]): boolean {
+function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp"], lang: string): boolean {
+  const tx = text(lang);
   const next = state.currentStep + 1;
   if (next < state.plan.steps.length) {
     state.currentStep = next;
@@ -79,19 +107,17 @@ function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp
   xp.push({ amount: bonus, reason: "tutor_solved" });
   messages.push({
     kind: "celebrate",
-    content: hintFreeSolve
-      ? "🎉 You solved the WHOLE thing without a single hint. That's real thinking power!"
-      : "🎉 You did it! Every step was your own brainwork.",
+    content: hintFreeSolve ? tx.solvedClean : tx.solved,
     meta: { finalAnswer: state.plan.final_answer, bigIdea: state.plan.big_idea },
   });
   if (state.plan.recap) messages.push({ kind: "recap", content: state.plan.recap });
   if (state.plan.practice_problem) {
-    messages.push({ kind: "text", content: `**Try one on your own:** ${state.plan.practice_problem}`, meta: { practice: state.plan.practice_problem } });
+    messages.push({ kind: "text", content: `${tx.practice} ${state.plan.practice_problem}`, meta: { practice: state.plan.practice_problem } });
   }
   return hintFreeSolve;
 }
 
-export function applyEvaluation(prev: SessionState, ev: Evaluation): Transition {
+export function applyEvaluation(prev: SessionState, ev: Evaluation, lang = "en"): Transition {
   const state = clone(prev);
   const i = state.currentStep;
   const step = state.plan.steps[i];
@@ -101,10 +127,10 @@ export function applyEvaluation(prev: SessionState, ev: Evaluation): Transition 
   let hintFreeSolve = false;
 
   // Leak guard on anything the model wrote while the student hasn't got it yet.
-  const safe = (text: string) =>
-    ev.verdict !== "correct" && (leaksAnswer(text, step.expected) || leaksAnswer(text, state.plan.final_answer))
-      ? "Let's figure this part out together — you're closer than you think!"
-      : text;
+  const safe = (msg: string) =>
+    ev.verdict !== "correct" && (leaksAnswer(msg, step.expected) || leaksAnswer(msg, state.plan.final_answer))
+      ? text(lang).leakGuard
+      : msg;
 
   switch (ev.verdict) {
     case "correct": {
@@ -114,7 +140,7 @@ export function applyEvaluation(prev: SessionState, ev: Evaluation): Transition 
       if (p.wrong === 0 && p.hintsShown === 0) xp.push({ amount: XP.tutorStepCleanBonus, reason: "tutor_step_clean" });
       messages.push({ kind: "feedback", content: ev.feedback, stepIndex: i, meta: { verdict: "correct" } });
       if (step.why) messages.push({ kind: "why", content: step.why, stepIndex: i });
-      hintFreeSolve = advance(state, messages, xp);
+      hintFreeSolve = advance(state, messages, xp, lang);
       break;
     }
     case "partial":
@@ -164,7 +190,7 @@ export function nextHint(prev: SessionState): { state: SessionState; message: Ou
  * (not the whole solution) with its reasoning, then continue the path so the
  * student still does the remaining steps.
  */
-export function revealStep(prev: SessionState): Transition | null {
+export function revealStep(prev: SessionState, lang = "en"): Transition | null {
   if (!canRevealStep(prev)) return null;
   const state = clone(prev);
   const i = state.currentStep;
@@ -174,11 +200,11 @@ export function revealStep(prev: SessionState): Transition | null {
   const messages: OutMessage[] = [
     {
       kind: "reveal",
-      content: `Here's this step: **${step.expected}**\n\n💡 ${step.why}\n\nNo worries — now you've seen how it works. Let's keep going!`,
+      content: text(lang).reveal(step.expected, step.why),
       stepIndex: i,
     },
   ];
   const xp: Transition["xp"] = [];
-  const hintFreeSolve = advance(state, messages, xp);
+  const hintFreeSolve = advance(state, messages, xp, lang);
   return { state, messages, xp, hintFreeSolve };
 }

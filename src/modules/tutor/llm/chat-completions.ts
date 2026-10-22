@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { HttpError } from "../../../lib/errors";
 import { logger } from "../../../lib/logger";
-import { EVALUATOR_SYSTEM, PLANNER_SYSTEM } from "../prompts";
+import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, TRANSLATOR_SYSTEM } from "../prompts";
 import { EvalSchema, PlanSchema, normalizePlan, type Evaluation, type Plan } from "../schemas";
-import { evalText, offTrackEvaluation, planText, refusedPlan } from "./context";
+import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
 import type { EvalInput, PlanInput, TutorLLM } from "./types";
 
 // One engine for every OpenAI-compatible Chat Completions API (OpenAI, DeepSeek).
@@ -49,6 +49,7 @@ ${JSON.stringify(z.toJSONSchema(schema))}`;
 
 const PLAN_SYSTEM = withJsonContract(PLANNER_SYSTEM, PlanSchema);
 const EVAL_SYSTEM = withJsonContract(EVALUATOR_SYSTEM, EvalSchema);
+const TRANSLATE_SYSTEM = withJsonContract(TRANSLATOR_SYSTEM, PlanSchema);
 
 function extractJson(text: string): unknown {
   return JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim());
@@ -94,6 +95,11 @@ export class ChatCompletionsTutor implements TutorLLM {
       if (err instanceof FilteredError) return offTrackEvaluation(input.step);
       throw err;
     }
+  }
+
+  async translatePlan(plan: Plan, language: string): Promise<Plan> {
+    const translated = await this.structured(PlanSchema, this.opts.model, TRANSLATE_SYSTEM, translateText(plan, language), 8000, this.opts.reasoning?.evaluate);
+    return mergeTranslation(plan, normalizePlan(translated));
   }
 
   private async structured<T>(

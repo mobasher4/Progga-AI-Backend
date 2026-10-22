@@ -61,7 +61,8 @@ model TutorSession {
   studentId     String
   subject       String
   grade         Int
-  mode          String // problem | concept
+  mode          String // problem | concept | fact
+  language      String         @default("en") // language the hidden plan is written in
   title         String
   topic         String         @default("")
   problemText   String

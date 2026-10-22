@@ -26,6 +26,28 @@ export const refusedPlan = (p: StudentProfile): Plan => ({
   explore_next: [],
 });
 
+export const translateText = (plan: Plan, language: string) =>
+  `<target_language>${language}</target_language>\n<plan>\n${JSON.stringify(plan)}\n</plan>`;
+
+/**
+ * Accept a translated plan only if its shape is intact, and always restore the
+ * hidden fields from the original so a translation can never change the answers.
+ */
+export function mergeTranslation(original: Plan, translated: Plan): Plan {
+  const sameShape =
+    translated.steps.length === original.steps.length &&
+    translated.steps.every((s, i) => s.hints.length === original.steps[i].hints.length);
+  if (!sameShape) return original;
+  return {
+    ...translated,
+    safety: original.safety,
+    mode: original.mode,
+    topic: original.topic,
+    final_answer: original.final_answer,
+    steps: translated.steps.map((s, i) => ({ ...s, expected: original.steps[i].expected })),
+  };
+}
+
 /** Safe fallback when a reply can't be graded: keep the student on the current step. */
 export const offTrackEvaluation = (step: Step): Evaluation => ({
   verdict: "off_topic",

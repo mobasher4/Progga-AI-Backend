@@ -56,6 +56,7 @@ export const tutorLLM: TutorLLM = {
   },
   plan: (input) => current().plan(input),
   evaluate: (input) => current().evaluate(input),
+  translatePlan: (plan, language) => current().translatePlan(plan, language),
 };
 
 /** Models an admin can choose from for a provider. */
