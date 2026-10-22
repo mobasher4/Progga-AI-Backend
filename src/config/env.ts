@@ -30,7 +30,8 @@ const raw = parsed.data;
 
 export const env = {
   ...raw,
-  isProd: raw.NODE_ENV === "production",
+  // Vercel doesn't always set NODE_ENV for functions, so treat any Vercel deployment as production.
+  isProd: raw.NODE_ENV === "production" || !!process.env.VERCEL,
   corsOrigins: raw.CORS_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean),
   /** Provider used until an admin picks one in AI settings (stored in the database). */
   llmProvider: (raw.LLM_PROVIDER ||
