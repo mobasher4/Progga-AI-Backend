@@ -1,0 +1,245 @@
+// Progga AI data model.
+// Dev uses SQLite for zero-setup. For production, change provider to "postgresql".
+// Enum-like columns are plain strings validated by Zod in the API layer so the
+// schema stays portable across SQLite and Postgres.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  role            String   @default("STUDENT") // STUDENT | PARENT | TEACHER | ADMIN
+  grade           Int? // 3..12 (11-12 = HSC). Students only.
+  language        String   @default("en") // en | bn | mix (Banglish)
+  avatarSkin      String   @default("classic")
+  xp              Int      @default(0)
+  coins           Int      @default(0)
+  streakDays      Int      @default(0)
+  bestStreak      Int      @default(0)
+  lastActiveDate  String? // YYYY-MM-DD in Asia/Dhaka
+  linkCode        String   @unique // shared with a parent/teacher to link accounts
+  dailyTutorLimit Int      @default(25)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tutorSessions  TutorSession[]
+  xpEvents       XpEvent[]
+  badges         UserBadge[]
+  items          UserItem[]
+  questClaims    QuestClaim[]
+  lessonProgress LessonProgress[]
+  quizAttempts   QuizAttempt[]
+  safetyEvents   SafetyEvent[]
+  guardianOf     GuardianLink[]   @relation("guardian")
+  guardedBy      GuardianLink[]   @relation("student")
+}
+
+model GuardianLink {
+  id         String   @id @default(cuid())
+  guardianId String
+  studentId  String
+  createdAt  DateTime @default(now())
+  guardian   User     @relation("guardian", fields: [guardianId], references: [id], onDelete: Cascade)
+  student    User     @relation("student", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([guardianId, studentId])
+}
+
+// ── Socratic tutor ───────────────────────────────────────
+
+model TutorSession {
+  id            String         @id @default(cuid())
+  studentId     String
+  subject       String
+  grade         Int
+  mode          String // problem | concept
+  title         String
+  topic         String         @default("")
+  problemText   String
+  hadImage      Boolean        @default(false)
+  status        String         @default("active") // active | solved | abandoned
+  plan          Json // hidden lesson plan (steps, expected answers, hints, final answer)
+  progress      Json // per-step runtime state: attempts, hints shown, revealed
+  currentStep   Int            @default(0)
+  hintsUsed     Int            @default(0)
+  wrongAttempts Int            @default(0)
+  xpEarned      Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  student       User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  messages      TutorMessage[]
+
+  @@index([studentId, createdAt])
+}
+
+model TutorMessage {
+  id        String       @id @default(cuid())
+  sessionId String
+  role      String // student | tutor
+  kind      String       @default("text") // text | question | hint | feedback | why | celebrate | recap | reveal | safety
+  content   String
+  stepIndex Int?
+  meta      Json?
+  createdAt DateTime     @default(now())
+  session   TutorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+model SafetyEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String // unsafe | personal_info | off_topic | wellbeing
+  excerpt   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ── Gamification ─────────────────────────────────────────
+
+model XpEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Int
+  reason    String // tutor_step | tutor_step_clean | tutor_solved | lesson_complete | checkpoint | quiz_correct | quiz_finish | quest | streak
+  refId     String?
+  day       String // YYYY-MM-DD (Asia/Dhaka) for fast daily quest + streak queries
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, day])
+  @@index([createdAt])
+}
+
+model UserBadge {
+  id       String   @id @default(cuid())
+  userId   String
+  badgeId  String
+  earnedAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+}
+
+model UserItem {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+}
+
+model QuestClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  questId   String
+  day       String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questId, day])
+}
+
+// ── App settings (e.g. which AI provider/model is active) ──
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ── Content: subjects, video lessons, quizzes ────────────
+
+model Subject {
+  id        String         @id // slug: math, science, ...
+  name      String
+  nameBn    String
+  icon      String // emoji
+  color     String // hex
+  minGrade  Int
+  maxGrade  Int
+  order     Int            @default(0)
+  lessons   Lesson[]
+  questions QuizQuestion[]
+}
+
+model Lesson {
+  id          String           @id @default(cuid())
+  subjectId   String
+  grade       Int
+  chapter     String
+  title       String
+  description String
+  provider    String // youtube | mp4
+  videoUrl    String // YouTube video id or mp4 URL
+  durationSec Int
+  xpReward    Int              @default(20)
+  checkpoints Json // [{ atSec, question, options[], answerIndex, explanation }]
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+  subject     Subject          @relation(fields: [subjectId], references: [id])
+  progress    LessonProgress[]
+
+  @@index([subjectId, grade])
+}
+
+model LessonProgress {
+  id                 String   @id @default(cuid())
+  userId             String
+  lessonId           String
+  watchedSec         Int      @default(0)
+  checkpointsCorrect Json     @default("[]") // indexes answered correctly
+  completed          Boolean  @default(false)
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson             Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
+
+model QuizQuestion {
+  id          String  @id @default(cuid())
+  subjectId   String
+  grade       Int
+  topic       String
+  prompt      String
+  options     Json // string[]
+  answerIndex Int
+  explanation String
+  difficulty  Int     @default(1) // 1..3
+  subject     Subject @relation(fields: [subjectId], references: [id])
+
+  @@index([subjectId, grade])
+}
+
+model QuizAttempt {
+  id           String    @id @default(cuid())
+  userId       String
+  subjectId    String
+  grade        Int
+  questionIds  Json // string[]
+  answers      Json // [{ questionId, choice, correct, ms }]
+  combo        Int       @default(0)
+  bestCombo    Int       @default(0)
+  hearts       Int       @default(3)
+  score        Int       @default(0)
+  correctCount Int       @default(0)
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}

@@ -1,0 +1,17 @@
+# dependencies & build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# secrets — never commit API keys or JWT secrets
+.env
+.env.*
+!.env.example
+
+# local SQLite database
+*.db
+*.db-journal
+
+# misc
+*.log
+.DS_Store

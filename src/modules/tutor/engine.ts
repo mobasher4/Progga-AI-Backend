@@ -1,0 +1,184 @@
+import { XP, type XpReason } from "../gamification/catalog";
+import type { Evaluation, Plan, StepProgress } from "./schemas";
+import { leaksAnswer } from "./safety";
+
+// Pure state machine for a tutoring session. No I/O — easy to unit-test.
+// The service layer persists whatever this returns.
+
+export type MsgKind = "text" | "question" | "hint" | "feedback" | "why" | "celebrate" | "recap" | "reveal" | "safety" | "answer";
+
+export interface OutMessage {
+  kind: MsgKind;
+  content: string;
+  stepIndex?: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface SessionState {
+  plan: Plan;
+  progress: StepProgress[];
+  currentStep: number;
+  hintsUsed: number;
+  wrongAttempts: number;
+  status: "active" | "solved" | "abandoned";
+}
+
+export interface Transition {
+  state: SessionState;
+  messages: OutMessage[];
+  xp: { amount: number; reason: XpReason }[];
+  hintFreeSolve: boolean;
+  safetyCategory?: "wellbeing" | "off_topic";
+}
+
+/** Wrong answers on a step before Progga proactively suggests a hint. */
+export const SUGGEST_HINT_AFTER = 2;
+/** Wrong answers needed (with all hints used) before "show me this step" unlocks. */
+export const REVEAL_AFTER_WRONG = 2;
+
+export const newProgress = (plan: Plan): StepProgress[] =>
+  plan.steps.map(() => ({ attempts: 0, wrong: 0, hintsShown: 0, revealed: false, solved: false }));
+
+export function openingMessages(plan: Plan): OutMessage[] {
+  // Facts can't be reasoned out — answer straight away, then widen the student's view.
+  if (plan.mode === "fact") {
+    return [
+      {
+        kind: "answer",
+        content: plan.answer,
+        meta: { moreInfo: plan.more_info, funFact: plan.fun_fact || undefined, explore: plan.explore_next, bigIdea: plan.big_idea || undefined },
+      },
+    ];
+  }
+  const out: OutMessage[] = plan.intro ? [{ kind: "text", content: plan.intro }] : [];
+  if (plan.steps[0]) out.push({ kind: "question", content: plan.steps[0].prompt, stepIndex: 0 });
+  return out;
+}
+
+export function canRevealStep(state: SessionState): boolean {
+  const step = state.plan.steps[state.currentStep];
+  const p = state.progress[state.currentStep];
+  return !!step && !!p && state.status === "active" && p.hintsShown >= step.hints.length && p.wrong >= REVEAL_AFTER_WRONG;
+}
+
+const clone = (s: SessionState): SessionState => ({ ...s, progress: s.progress.map((p) => ({ ...p })) });
+
+/** Moves to the next step or finishes the session. Shared by "correct" and "reveal". */
+function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp"]): boolean {
+  const next = state.currentStep + 1;
+  if (next < state.plan.steps.length) {
+    state.currentStep = next;
+    messages.push({ kind: "question", content: state.plan.steps[next].prompt, stepIndex: next });
+    return false;
+  }
+  // Finished the whole path 🎉
+  state.status = "solved";
+  const anyRevealed = state.progress.some((p) => p.revealed);
+  const hintFreeSolve = state.hintsUsed === 0 && !anyRevealed;
+  const bonus = Math.max(10, XP.tutorSolved - XP.tutorSolvedHintPenalty * state.hintsUsed - (anyRevealed ? 10 : 0));
+  xp.push({ amount: bonus, reason: "tutor_solved" });
+  messages.push({
+    kind: "celebrate",
+    content: hintFreeSolve
+      ? "🎉 You solved the WHOLE thing without a single hint. That's real thinking power!"
+      : "🎉 You did it! Every step was your own brainwork.",
+    meta: { finalAnswer: state.plan.final_answer, bigIdea: state.plan.big_idea },
+  });
+  if (state.plan.recap) messages.push({ kind: "recap", content: state.plan.recap });
+  if (state.plan.practice_problem) {
+    messages.push({ kind: "text", content: `**Try one on your own:** ${state.plan.practice_problem}`, meta: { practice: state.plan.practice_problem } });
+  }
+  return hintFreeSolve;
+}
+
+export function applyEvaluation(prev: SessionState, ev: Evaluation): Transition {
+  const state = clone(prev);
+  const i = state.currentStep;
+  const step = state.plan.steps[i];
+  const p = state.progress[i];
+  const messages: OutMessage[] = [];
+  const xp: Transition["xp"] = [];
+  let hintFreeSolve = false;
+
+  // Leak guard on anything the model wrote while the student hasn't got it yet.
+  const safe = (text: string) =>
+    ev.verdict !== "correct" && (leaksAnswer(text, step.expected) || leaksAnswer(text, state.plan.final_answer))
+      ? "Let's figure this part out together — you're closer than you think!"
+      : text;
+
+  switch (ev.verdict) {
+    case "correct": {
+      p.attempts++;
+      p.solved = true;
+      xp.push({ amount: XP.tutorStep, reason: "tutor_step" });
+      if (p.wrong === 0 && p.hintsShown === 0) xp.push({ amount: XP.tutorStepCleanBonus, reason: "tutor_step_clean" });
+      messages.push({ kind: "feedback", content: ev.feedback, stepIndex: i, meta: { verdict: "correct" } });
+      if (step.why) messages.push({ kind: "why", content: step.why, stepIndex: i });
+      hintFreeSolve = advance(state, messages, xp);
+      break;
+    }
+    case "partial":
+    case "incorrect": {
+      p.attempts++;
+      if (ev.verdict === "incorrect") {
+        p.wrong++;
+        state.wrongAttempts++;
+      }
+      const suggestHint = p.wrong >= SUGGEST_HINT_AFTER && p.hintsShown < step.hints.length;
+      messages.push({ kind: "feedback", content: safe(ev.feedback), stepIndex: i, meta: { verdict: ev.verdict, misconception: ev.misconception || undefined } });
+      if (ev.follow_up) messages.push({ kind: "question", content: safe(ev.follow_up), stepIndex: i, meta: { suggestHint } });
+      break;
+    }
+    case "wellbeing":
+      messages.push({ kind: "safety", content: ev.feedback, stepIndex: i });
+      return { state, messages, xp, hintFreeSolve, safetyCategory: "wellbeing" };
+    default: {
+      // asks_for_answer | question | off_topic — no penalty, keep guiding
+      messages.push({ kind: "feedback", content: safe(ev.feedback), stepIndex: i, meta: { verdict: ev.verdict } });
+      if (ev.follow_up) {
+        messages.push({ kind: "question", content: safe(ev.follow_up), stepIndex: i, meta: { suggestHint: ev.verdict === "asks_for_answer" } });
+      }
+      if (ev.verdict === "off_topic") return { state, messages, xp, hintFreeSolve, safetyCategory: "off_topic" };
+    }
+  }
+  return { state, messages, xp, hintFreeSolve };
+}
+
+export function nextHint(prev: SessionState): { state: SessionState; message: OutMessage } | null {
+  const state = clone(prev);
+  const i = state.currentStep;
+  const step = state.plan.steps[i];
+  const p = state.progress[i];
+  if (!step || state.status !== "active" || p.hintsShown >= step.hints.length) return null;
+  const hint = step.hints[p.hintsShown];
+  p.hintsShown++;
+  state.hintsUsed++;
+  return {
+    state,
+    message: { kind: "hint", content: hint, stepIndex: i, meta: { level: p.hintsShown, of: step.hints.length } },
+  };
+}
+
+/**
+ * Last-resort scaffold when a student is truly stuck: reveal ONE micro-step
+ * (not the whole solution) with its reasoning, then continue the path so the
+ * student still does the remaining steps.
+ */
+export function revealStep(prev: SessionState): Transition | null {
+  if (!canRevealStep(prev)) return null;
+  const state = clone(prev);
+  const i = state.currentStep;
+  const step = state.plan.steps[i];
+  state.progress[i].revealed = true;
+  state.progress[i].solved = true;
+  const messages: OutMessage[] = [
+    {
+      kind: "reveal",
+      content: `Here's this step: **${step.expected}**\n\n💡 ${step.why}\n\nNo worries — now you've seen how it works. Let's keep going!`,
+      stepIndex: i,
+    },
+  ];
+  const xp: Transition["xp"] = [];
+  const hintFreeSolve = advance(state, messages, xp);
+  return { state, messages, xp, hintFreeSolve };
+}
