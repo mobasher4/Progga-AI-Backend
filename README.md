@@ -4,13 +4,13 @@ Node.js API for **Progga AI**, a safe Socratic AI tutor for students from Class 
 
 Frontend: [Progga-AI-FontEnd](https://github.com/mobasher4/Progga-AI-FontEnd)
 
-**Stack:** Express 5 · TypeScript · Prisma (SQLite in dev, Postgres-ready) · Zod · OpenAI / DeepSeek / Claude
+**Stack:** Express 5 · TypeScript · Prisma (PostgreSQL, e.g. Neon) · Zod · OpenAI / DeepSeek / Claude
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env     # set JWT_SECRET and at least one AI key (OPENAI_API_KEY recommended)
+cp .env.example .env     # set DATABASE_URL + DIRECT_URL (Postgres), JWT_SECRET and at least one AI key
 npm run setup            # create the database + seed demo content
 npm run dev              # http://localhost:4000
 npm run check:llm        # optional: live test of the AI connection
@@ -46,6 +46,6 @@ Expected answers, unseen hints and the final answer never leave the server, and 
 
 ## Production
 
-- Switch `provider` in `prisma/schema.prisma` to `postgresql` and point `DATABASE_URL` at Postgres.
+- On Vercel, set `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) to your Postgres/Neon connection strings.
 - Use a long random `JWT_SECRET` and set `CORS_ORIGINS` to your frontend URL.
 - Replace the placeholder lesson videos in `prisma/seed.ts` with real content.
