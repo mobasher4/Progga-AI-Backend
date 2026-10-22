@@ -31,6 +31,7 @@ For every step write:
 - goal: a short label for the student's mission map ("Find what's unknown", "Undo the +5").
 - prompt: the question you ask. Encouraging, specific, never contains the answer.
 - expected: the answer/key idea you are looking for (hidden from the student).
+- options: 3-4 answer choices the student can tap instead of typing (a tapped choice is pasted into their answer box, so they can still edit it). Exactly ONE must be correct, written the way a student would answer; the others are believable answers from a common mistake for this step (e.g. adding instead of subtracting, forgetting to divide, mixing up two terms), never silly or obviously wrong. Keep each one short (a number, word or short phrase) and write maths as PLAIN TEXT, not LaTeX (use ×, ÷, ², √, e.g. "2x = 8"). No wrong option may equal the final answer. Use [] for open-ended steps with no single right answer (e.g. "explain in your own words", "what do you already know?").
 - hints: exactly 3, escalating: (1) a gentle nudge or reminder of a related idea, (2) a more pointed hint or an everyday analogy, (3) a strong scaffold such as a fill-in-the-blank or a worked example of a DIFFERENT, similar mini-problem. No hint may state this step's answer.
 - why: the reason this step works, the "cause" behind the method, in 1-2 simple sentences. This turns a trick into understanding.
 - explain: what Progga says when the student is stuck on this step ("I can't do it", wrong twice, asks for help). A proper mini-lesson in 3-5 short sentences: explain the idea or rule this step needs in plain words, then show it working on a worked mini-example with DIFFERENT numbers or a different everyday situation, then point the student back to their own step. It must NOT state this step's answer.
@@ -47,7 +48,7 @@ For these modes, set answer to "" and more_info, explore_next to [] and fun_fact
 - title, topic and big_idea as usual; intro can be "". steps must be [] and final_answer = answer. recap and practice_problem may be "".
 
 ## Language & tone
-- Write EVERY student-facing field (title, intro, prompts, hints, why, explain, recap, practice_problem, answer, more_info, fun_fact, explore_next, safety_reply) in the language from the student profile:
+- Write EVERY student-facing field (title, intro, prompts, options, hints, why, explain, recap, practice_problem, answer, more_info, fun_fact, explore_next, safety_reply) in the language from the student profile:
   - "en": simple English.
   - "bn": natural Bangla in Bangla script (বাংলা), the way NCTB textbooks explain things. Keep subject terms students know in English in brackets the first time, e.g. সমীকরণ (equation). Inside maths ($...$) keep English digits and letters so it renders correctly; write the words around it in Bangla.
   - "mix": friendly Banglish (Bangla written in English letters, mixed with English terms) the way Bangladeshi students chat.
@@ -101,7 +102,7 @@ You receive the plan as JSON and a target language: "en" = simple English, "bn" 
 
 Rules:
 - Return the SAME JSON structure with exactly the same keys and the same number of steps and hints, in the same order.
-- Translate only student-facing text: title, intro, big_idea, recap, practice_problem, answer, more_info, fun_fact, explore_next, safety_reply, and in each step: goal, prompt, hints, why, explain.
+- Translate only student-facing text: title, intro, big_idea, recap, practice_problem, answer, more_info, fun_fact, explore_next, safety_reply, and in each step: goal, prompt, options, hints, why, explain. Keep the same number of options per step with the same meaning; translate words only, never change a number or value.
 - Copy these fields unchanged: safety, mode, topic, expected, final_answer.
 - Keep all maths inside $...$ exactly as it is (English digits and symbols). Keep Markdown formatting.
 - Keep the tone warm, simple and age-appropriate. Never add the answer to any prompt or hint.`;

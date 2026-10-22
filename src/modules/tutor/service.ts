@@ -67,6 +67,8 @@ function publicView(s: TutorSession) {
         index: i,
         goal: state === "locked" ? null : step.goal,
         state,
+        // answer choices only for the step being worked on (older plans have none)
+        options: state === "current" ? step.options ?? [] : [],
         hintsShown: p.hintsShown,
         hintsTotal: step.hints.length,
       };

@@ -1,4 +1,4 @@
-import type { Evaluation, Plan, Step } from "../schemas";
+import { normalizePlan, type Evaluation, type Plan, type Step } from "../schemas";
 import type { EvalInput, PlanInput, TutorLLM } from "./types";
 
 /**
@@ -13,7 +13,7 @@ export class MockTutor implements TutorLLM {
 
   async plan({ question }: PlanInput): Promise<Plan> {
     const q = question.replace(/\s+/g, " ").trim();
-    return linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q);
+    return normalizePlan(linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q));
   }
 
   /** The offline tutor only speaks English, so its plans stay as they are. */
@@ -156,6 +156,7 @@ function linearPlan(q: string): Plan | null {
       goal: "Find what's unknown",
       prompt: `In $${eq}$, which letter are we trying to find?`,
       expected: v,
+      options: [v, String(b), String(c)],
       hints: ["Look for the letter — letters stand for numbers we don't know yet.", `It's the only letter in the equation!`, `The unknown is written next to the ${a === 1 ? "start" : `number ${a}`}.`],
       why: "Naming the unknown first tells us our mission: get that letter all alone on one side.",
       explain:
@@ -165,6 +166,7 @@ function linearPlan(q: string): Plan | null {
       goal: `Undo the ${sign}${b}`,
       prompt: `To get $${a === 1 ? "" : a}${v}$ alone, we ${undo} ${b} on **both** sides. What is $${c} ${sign === "+" ? "-" : "+"} ${b}$?`,
       expected: String(rhs),
+      options: [String(rhs), String(sign === "+" ? c + b : c - b), String(c)],
       hints: ["An equation is like a balance — whatever we do to one side, we do to the other.", `${sign === "+" ? "Taking away" : "Adding"} ${b} cancels the ${sign}${b}.`, `Try with smaller numbers: if $${v} + 2 = 7$, then $${v} = 7 - 2$.`],
       why: `${undo === "subtract" ? "Subtracting" : "Adding"} ${b} cancels the ${sign}${b} and keeps the equation balanced, because we did the same thing to both sides.`,
       explain: `Think of an equation as a **balance scale** ⚖️: both sides weigh the same. To get the unknown alone, we *undo* whatever is attached to it — and to keep the scale balanced, we do it to **both** sides. Example: in $m + 3 = 10$, the $+3$ is undone by subtracting 3, so $m = 10 - 3 = 7$. In your equation, the number attached is ${sign}${b}, so ${undo} ${b} from the other side too.`,
@@ -175,6 +177,7 @@ function linearPlan(q: string): Plan | null {
       goal: `Undo the ×${a}`,
       prompt: `Now we have $${a}${v} = ${rhs}$. What number times ${a} gives ${rhs}?`,
       expected: String(ans),
+      options: [String(ans), String(rhs * a), String(rhs - a)],
       hints: [`$${a}${v}$ means ${a} times ${v}. What's the opposite of multiplying?`, `Divide both sides by ${a}.`, `Like this: if $2y = 10$, then $y = 10 \\div 2 = 5$.`],
       why: `Dividing by ${a} undoes multiplying by ${a}, leaving ${v} all alone.`,
       explain: `When a number sits right next to a letter, like $${a}${v}$, it means **${a} times ${v}**. The opposite of multiplying is **dividing**, so we divide both sides by that number. Example: $3k = 12$ means "3 groups of $k$ make 12", so $k = 12 \\div 3 = 4$. Do the same with your numbers.`,
@@ -214,6 +217,7 @@ function arithmeticPlan(q: string): Plan | null {
       goal: "Spot the operation",
       prompt: `In $${x} ${op} ${y}$, do we add, subtract, multiply or divide?`,
       expected: name,
+      options: ["add", "subtract", "multiply", "divide"],
       hints: ["Look at the symbol between the numbers.", `The symbol is "${op}".`, `"${op}" means we ${name.slice(0, 3)}…`],
       why: "Knowing the operation tells us which strategy to use.",
       explain: 'The little symbol between two numbers tells us what to do: **+** means add (put together), **−** means subtract (take away), **×** means multiply (groups of), and **÷** means divide (share equally). For example, in $6 \\times 2$ the symbol "×" tells us to multiply. Look at the symbol in your problem and name it.',
@@ -224,6 +228,7 @@ function arithmeticPlan(q: string): Plan | null {
       goal: "Use the tens first",
       prompt: `Let's split ${y} into ${tens} + ${ones}. What is $${x} ${name === "add" ? "+" : "\\times"} ${tens}$?`,
       expected: String(fn(x, tens)),
+      options: [String(fn(x, tens)), String(fn(x, tens) + 10), String(fn(x, tens / 10))],
       hints: ["Tens are easy to work with!", `Think in groups of ten.`, `Example: $12 ${name === "add" ? "+ 20 = 32" : "\\times 20 = 240"}$.`],
       why: "Splitting a number into tens and ones makes big sums easy to do in your head.",
       explain: `Big numbers are easier in pieces. We split the second number into **tens** and **ones**, and work with the tens first because tens are friendly. Example: $25 + 30$ — just add 3 tens to 25: $25, 35, 45, 55$. Now try your numbers with ${tens}.`,
@@ -232,6 +237,7 @@ function arithmeticPlan(q: string): Plan | null {
       goal: "Finish with the ones",
       prompt: `Now ${name} the ${ones} as well. What's the total?`,
       expected: String(fn(x, y)),
+      options: [String(fn(x, y)), String(fn(x, tens)), String(fn(x, y) + 10)],
       hints: [`Take your last answer and ${name === "add" ? "add" : "add"} the ones part.`, name === "add" ? `${fn(x, tens)} + ${ones}` : `${fn(x, tens)} + ${x} × ${ones}`, "You're one tiny step away!"],
       why: "Putting the parts back together gives the whole answer — that's the distributive idea.",
       explain: `We already did the tens part, so now we finish with the **ones** and add the pieces together. Example: for $25 + 34$ we did $25 + 30 = 55$, then $55 + 4 = 59$. Take your last answer and finish with the ${ones}.`,
@@ -241,6 +247,8 @@ function arithmeticPlan(q: string): Plan | null {
       goal: "Work it out",
       prompt: `Now, what is $${x} ${op} ${y}$?`,
       expected: String(fn(x, y)),
+      // the right result first, then what the other operations would give
+      options: [fn(x, y), x + y, x - y, x * y].map((v) => String(Number(v.toFixed(2)))),
       hints: ["Take it slowly — use your fingers or draw dots if it helps.", `Think about what "${name}" means with real objects.`, `Try a smaller version first: $4 ${op} 2$.`],
       why: `When we ${name}, we combine the numbers in a specific way — practice makes it automatic!`,
       explain: `To ${name}, picture real things. For example, with 8 mangoes and 2 more, adding means counting them all together; sharing 8 mangoes between 2 friends means dividing. Draw dots or use your fingers for your numbers, one at a time.`,
@@ -270,6 +278,7 @@ function conceptPlan(q: string): Plan {
         goal: "What do you already know?",
         prompt: "Before I explain anything — what do *you* already know or guess about this? Write a sentence or two.",
         expected: "",
+        options: [],
         hints: ["There's no wrong answer here — just share your thoughts!", "Think about where you've seen or heard about this before.", "Start with: 'I think it's because…'"],
         why: "Connecting new ideas to what you already know makes them stick much better.",
         explain: "There's no wrong answer here! Scientists always start by saying what they already *think*, then they test it. For example, if someone asks \"why does ice melt?\", you might say \"because the room is warm\" — that's a great start. Just write one sentence about what comes to mind.",
@@ -278,6 +287,7 @@ function conceptPlan(q: string): Plan {
         goal: "Find the key words",
         prompt: "Which words in the question seem most important? Why?",
         expected: "",
+        options: [],
         hints: ["Look for nouns and action words.", "Which word would you look up in a dictionary?", "Try: 'The important word is … because …'"],
         why: "Key words tell us exactly what we need to understand.",
         explain: "Key words are the words the whole question depends on — usually the names of things and the action. In \"Why do plants need sunlight?\", the key words are **plants** and **sunlight**, because the question is about how they connect. Pick the one or two words in your question that matter most.",
@@ -286,6 +296,7 @@ function conceptPlan(q: string): Plan {
         goal: "Explain it back",
         prompt: "Now explain the idea in your own words, as if teaching a younger friend.",
         expected: "",
+        options: [],
         hints: ["Keep it simple — use an example.", "What would you draw to show it?", "Start with: 'Imagine…'"],
         why: "If you can teach it, you truly understand it!",
         explain: "Explaining to a younger friend means using simple words and one everyday example. For example: \"Plants are like little kitchens — sunlight is the stove that helps them cook food from water and air.\" Try making a picture like that for your idea.",

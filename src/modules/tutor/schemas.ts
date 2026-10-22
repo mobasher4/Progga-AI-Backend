@@ -8,6 +8,9 @@ export const StepSchema = z.object({
   goal: z.string().describe("Short label for this micro-step shown on the student's mission map (max ~8 words)"),
   prompt: z.string().describe("The question Progga asks the student for this step. Never contains the answer."),
   expected: z.string().describe("The answer or key idea the student should produce for this step. Hidden from the student."),
+  options: z
+    .array(z.string())
+    .describe("3-4 short plain-text answer choices the student can tap instead of typing: exactly ONE is correct (matches 'expected'), the rest are believable common mistakes. Empty array for open-ended steps."),
   hints: z.array(z.string()).describe("Exactly 3 hints, from a gentle nudge to a strong scaffold. None may state the step's answer."),
   why: z.string().describe("1-2 sentences explaining WHY this step works, shown after the student gets it right."),
   explain: z
@@ -56,6 +59,21 @@ export interface StepProgress {
 }
 
 export const MAX_STEPS = 8;
+export const MAX_OPTIONS = 4;
+
+/**
+ * Answer choices are pasted into the student's reply box, so they must be plain
+ * text. Shuffled here so the right one isn't always where the model put it.
+ */
+function cleanOptions(options: string[] | undefined): string[] {
+  const unique = [...new Set((options ?? []).map((o) => o.replace(/\$/g, "").trim()).filter(Boolean))].slice(0, MAX_OPTIONS);
+  if (unique.length < 2) return [];
+  for (let i = unique.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [unique[i], unique[j]] = [unique[j], unique[i]];
+  }
+  return unique;
+}
 
 /** Enforce the shape rules the JSON schema can't express. */
 export function normalizePlan(plan: Plan): Plan {
@@ -74,6 +92,7 @@ export function normalizePlan(plan: Plan): Plan {
   }
   const steps = plan.steps.slice(0, MAX_STEPS).map((s) => ({
     ...s,
+    options: cleanOptions(s.options),
     hints: (s.hints.length ? s.hints : ["Let's slow down and re-read the question together. What is it asking?"]).slice(0, 3),
     explain: s.explain ?? "",
   }));

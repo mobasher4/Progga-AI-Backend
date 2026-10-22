@@ -44,7 +44,12 @@ export function mergeTranslation(original: Plan, translated: Plan): Plan {
     mode: original.mode,
     topic: original.topic,
     final_answer: original.final_answer,
-    steps: translated.steps.map((s, i) => ({ ...s, expected: original.steps[i].expected })),
+    steps: translated.steps.map((s, i) => ({
+      ...s,
+      expected: original.steps[i].expected,
+      // a translation that dropped or added choices may have lost the right one
+      options: s.options.length === (original.steps[i].options ?? []).length ? s.options : original.steps[i].options,
+    })),
   };
 }
 
