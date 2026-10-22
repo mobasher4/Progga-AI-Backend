@@ -10,6 +10,9 @@ export const StepSchema = z.object({
   expected: z.string().describe("The answer or key idea the student should produce for this step. Hidden from the student."),
   hints: z.array(z.string()).describe("Exactly 3 hints, from a gentle nudge to a strong scaffold. None may state the step's answer."),
   why: z.string().describe("1-2 sentences explaining WHY this step works, shown after the student gets it right."),
+  explain: z
+    .string()
+    .describe("Shown when the student is stuck: a warm 3-5 sentence explanation that teaches the idea/method of this step with a worked mini-example using DIFFERENT numbers. Never states this step's answer."),
 });
 
 export const PlanSchema = z.object({
@@ -32,7 +35,7 @@ export const PlanSchema = z.object({
 });
 
 export const EvalSchema = z.object({
-  verdict: z.enum(["correct", "partial", "incorrect", "asks_for_answer", "question", "off_topic", "wellbeing"]),
+  verdict: z.enum(["correct", "partial", "incorrect", "stuck", "asks_for_answer", "question", "off_topic", "wellbeing"]),
   feedback: z.string().describe("1-3 short sentences reacting to the student's reply. Never reveals the step answer or final answer."),
   follow_up: z.string().describe("When not correct: a smaller guiding question that moves the student forward. Empty string when correct."),
   misconception: z.string().describe("Short internal note of the misconception, for the teacher dashboard. Empty if none."),
@@ -48,6 +51,8 @@ export interface StepProgress {
   hintsShown: number;
   revealed: boolean;
   solved: boolean;
+  /** Times Progga stepped in because the student was stuck (missing on older sessions). */
+  helped?: number;
 }
 
 export const MAX_STEPS = 8;
@@ -70,6 +75,7 @@ export function normalizePlan(plan: Plan): Plan {
   const steps = plan.steps.slice(0, MAX_STEPS).map((s) => ({
     ...s,
     hints: (s.hints.length ? s.hints : ["Let's slow down and re-read the question together. What is it asking?"]).slice(0, 3),
+    explain: s.explain ?? "",
   }));
   return { ...plan, steps, more_info: [], explore_next: [] };
 }

@@ -11,13 +11,13 @@ export function levelFromXp(xp: number): number {
 }
 
 const TITLES: [number, string][] = [
-  [1, "Curious Seedling"],
-  [3, "Banana Buddy"],
-  [5, "Puzzle Explorer"],
-  [8, "Brainy Builder"],
-  [12, "Quiz Knight"],
-  [16, "Logic Legend"],
-  [20, "Galaxy Brain"],
+  [1, "Little Sprout"],
+  [3, "Curious Mind"],
+  [5, "Brave Explorer"],
+  [8, "Brain Wizard"],
+  [12, "Knowledge Hero"],
+  [16, "Wisdom Star"],
+  [20, "Great Sage"],
 ];
 
 export function levelTitle(level: number): string {

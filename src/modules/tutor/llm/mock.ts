@@ -158,6 +158,8 @@ function linearPlan(q: string): Plan | null {
       expected: v,
       hints: ["Look for the letter — letters stand for numbers we don't know yet.", `It's the only letter in the equation!`, `The unknown is written next to the ${a === 1 ? "start" : `number ${a}`}.`],
       why: "Naming the unknown first tells us our mission: get that letter all alone on one side.",
+      explain:
+        "In an equation, a **letter** is a secret number we haven't found yet — we call it the *unknown*. Numbers like 3 or 7 are already known. For example, in $y + 4 = 9$ the unknown is $y$, because it's the only thing we don't know. Look at your equation the same way: which symbol is not a number?",
     },
     {
       goal: `Undo the ${sign}${b}`,
@@ -165,6 +167,7 @@ function linearPlan(q: string): Plan | null {
       expected: String(rhs),
       hints: ["An equation is like a balance — whatever we do to one side, we do to the other.", `${sign === "+" ? "Taking away" : "Adding"} ${b} cancels the ${sign}${b}.`, `Try with smaller numbers: if $${v} + 2 = 7$, then $${v} = 7 - 2$.`],
       why: `${undo === "subtract" ? "Subtracting" : "Adding"} ${b} cancels the ${sign}${b} and keeps the equation balanced, because we did the same thing to both sides.`,
+      explain: `Think of an equation as a **balance scale** ⚖️: both sides weigh the same. To get the unknown alone, we *undo* whatever is attached to it — and to keep the scale balanced, we do it to **both** sides. Example: in $m + 3 = 10$, the $+3$ is undone by subtracting 3, so $m = 10 - 3 = 7$. In your equation, the number attached is ${sign}${b}, so ${undo} ${b} from the other side too.`,
     },
   ];
   if (a !== 1) {
@@ -174,6 +177,7 @@ function linearPlan(q: string): Plan | null {
       expected: String(ans),
       hints: [`$${a}${v}$ means ${a} times ${v}. What's the opposite of multiplying?`, `Divide both sides by ${a}.`, `Like this: if $2y = 10$, then $y = 10 \\div 2 = 5$.`],
       why: `Dividing by ${a} undoes multiplying by ${a}, leaving ${v} all alone.`,
+      explain: `When a number sits right next to a letter, like $${a}${v}$, it means **${a} times ${v}**. The opposite of multiplying is **dividing**, so we divide both sides by that number. Example: $3k = 12$ means "3 groups of $k$ make 12", so $k = 12 \\div 3 = 4$. Do the same with your numbers.`,
     });
   }
   return base({
@@ -212,6 +216,7 @@ function arithmeticPlan(q: string): Plan | null {
       expected: name,
       hints: ["Look at the symbol between the numbers.", `The symbol is "${op}".`, `"${op}" means we ${name.slice(0, 3)}…`],
       why: "Knowing the operation tells us which strategy to use.",
+      explain: 'The little symbol between two numbers tells us what to do: **+** means add (put together), **−** means subtract (take away), **×** means multiply (groups of), and **÷** means divide (share equally). For example, in $6 \\times 2$ the symbol "×" tells us to multiply. Look at the symbol in your problem and name it.',
     },
   ];
   if (tens && ones && (name === "add" || name === "multiply")) {
@@ -221,6 +226,7 @@ function arithmeticPlan(q: string): Plan | null {
       expected: String(fn(x, tens)),
       hints: ["Tens are easy to work with!", `Think in groups of ten.`, `Example: $12 ${name === "add" ? "+ 20 = 32" : "\\times 20 = 240"}$.`],
       why: "Splitting a number into tens and ones makes big sums easy to do in your head.",
+      explain: `Big numbers are easier in pieces. We split the second number into **tens** and **ones**, and work with the tens first because tens are friendly. Example: $25 + 30$ — just add 3 tens to 25: $25, 35, 45, 55$. Now try your numbers with ${tens}.`,
     });
     steps.push({
       goal: "Finish with the ones",
@@ -228,6 +234,7 @@ function arithmeticPlan(q: string): Plan | null {
       expected: String(fn(x, y)),
       hints: [`Take your last answer and ${name === "add" ? "add" : "add"} the ones part.`, name === "add" ? `${fn(x, tens)} + ${ones}` : `${fn(x, tens)} + ${x} × ${ones}`, "You're one tiny step away!"],
       why: "Putting the parts back together gives the whole answer — that's the distributive idea.",
+      explain: `We already did the tens part, so now we finish with the **ones** and add the pieces together. Example: for $25 + 34$ we did $25 + 30 = 55$, then $55 + 4 = 59$. Take your last answer and finish with the ${ones}.`,
     });
   } else {
     steps.push({
@@ -236,6 +243,7 @@ function arithmeticPlan(q: string): Plan | null {
       expected: String(fn(x, y)),
       hints: ["Take it slowly — use your fingers or draw dots if it helps.", `Think about what "${name}" means with real objects.`, `Try a smaller version first: $4 ${op} 2$.`],
       why: `When we ${name}, we combine the numbers in a specific way — practice makes it automatic!`,
+      explain: `To ${name}, picture real things. For example, with 8 mangoes and 2 more, adding means counting them all together; sharing 8 mangoes between 2 friends means dividing. Draw dots or use your fingers for your numbers, one at a time.`,
     });
   }
   return base({
@@ -264,6 +272,7 @@ function conceptPlan(q: string): Plan {
         expected: "",
         hints: ["There's no wrong answer here — just share your thoughts!", "Think about where you've seen or heard about this before.", "Start with: 'I think it's because…'"],
         why: "Connecting new ideas to what you already know makes them stick much better.",
+        explain: "There's no wrong answer here! Scientists always start by saying what they already *think*, then they test it. For example, if someone asks \"why does ice melt?\", you might say \"because the room is warm\" — that's a great start. Just write one sentence about what comes to mind.",
       },
       {
         goal: "Find the key words",
@@ -271,6 +280,7 @@ function conceptPlan(q: string): Plan {
         expected: "",
         hints: ["Look for nouns and action words.", "Which word would you look up in a dictionary?", "Try: 'The important word is … because …'"],
         why: "Key words tell us exactly what we need to understand.",
+        explain: "Key words are the words the whole question depends on — usually the names of things and the action. In \"Why do plants need sunlight?\", the key words are **plants** and **sunlight**, because the question is about how they connect. Pick the one or two words in your question that matter most.",
       },
       {
         goal: "Explain it back",
@@ -278,6 +288,7 @@ function conceptPlan(q: string): Plan {
         expected: "",
         hints: ["Keep it simple — use an example.", "What would you draw to show it?", "Start with: 'Imagine…'"],
         why: "If you can teach it, you truly understand it!",
+        explain: "Explaining to a younger friend means using simple words and one everyday example. For example: \"Plants are like little kitchens — sunlight is the stove that helps them cook food from water and air.\" Try making a picture like that for your idea.",
       },
     ],
     final_answer: "(open-ended)",

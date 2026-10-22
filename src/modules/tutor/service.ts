@@ -4,6 +4,7 @@ import { dayKey, dayStartUtc } from "../../lib/dates";
 import { badRequest, notFound, tooMany } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { award, type Rewards } from "../gamification/service";
+import { relatedLessons } from "../lessons/related";
 import {
   applyEvaluation,
   canRevealStep,
@@ -11,6 +12,7 @@ import {
   nextHint,
   openingMessages,
   revealStep,
+  soundsStuck,
   type OutMessage,
   type SessionState,
 } from "./engine";
@@ -102,6 +104,22 @@ async function persistState(id: string, state: SessionState, xpGained: number) {
       xpEarned: { increment: xpGained },
     },
   });
+}
+
+/**
+ * The first time Progga teaches or shows a step in a session, attach our
+ * recorded lessons on the topic so the student can watch it explained.
+ */
+async function withVideos(s: TutorSession, msgs: OutMessage[]): Promise<OutMessage[]> {
+  const first = msgs.findIndex((m) => m.kind === "teach" || m.kind === "reveal");
+  if (first < 0) return msgs;
+  const already = await prisma.tutorMessage.count({ where: { sessionId: s.id, kind: { in: ["teach", "reveal"] } } });
+  if (already) return msgs;
+  const plan = s.plan as unknown as Plan;
+  const step = plan.steps[msgs[first].stepIndex ?? s.currentStep];
+  const videos = await relatedLessons({ subject: s.subject, grade: s.grade, text: `${plan.topic} ${s.title} ${s.problemText} ${step?.goal ?? ""}` });
+  if (!videos.length) return msgs;
+  return msgs.map((m, i) => (i === first ? { ...m, meta: { ...m.meta, videos } } : m));
 }
 
 async function logSafety(userId: string, category: string, excerpt: string) {
@@ -228,25 +246,28 @@ export async function reply(studentId: string, id: string, raw: string): Promise
 
   const state = toState(s);
   const recent = await prisma.tutorMessage.findMany({ where: { sessionId: id }, orderBy: { createdAt: "desc" }, take: RECENT_MESSAGES + 1 });
-  const evaluation = await tutorLLM.evaluate({
-    profile: { grade: s.grade, language: user.language, subject: s.subject },
-    problem: s.problemText,
-    plan: state.plan,
-    stepIndex: state.currentStep,
-    step: state.plan.steps[state.currentStep],
-    recent: recent
-      .slice(1) // skip the reply we just stored
-      .reverse()
-      .map((m) => ({ role: m.role as "student" | "tutor", content: m.content })),
-    reply: screened.text,
-  });
+  const evaluation = soundsStuck(screened.text)
+    ? { verdict: "stuck" as const, feedback: "", follow_up: "", misconception: "" }
+    : await tutorLLM.evaluate({
+        profile: { grade: s.grade, language: user.language, subject: s.subject },
+        problem: s.problemText,
+        plan: state.plan,
+        stepIndex: state.currentStep,
+        step: state.plan.steps[state.currentStep],
+        recent: recent
+          .slice(1) // skip the reply we just stored
+          .reverse()
+          .map((m) => ({ role: m.role as "student" | "tutor", content: m.content })),
+        reply: screened.text,
+      });
 
   const t = applyEvaluation(state, evaluation, user.language);
   if (t.safetyCategory === "wellbeing") await logSafety(studentId, "wellbeing", screened.text);
 
   const gained = t.xp.reduce((sum, e) => sum + e.amount, 0);
+  const outgoing = await withVideos(s, t.messages);
   await persistState(id, t.state, gained);
-  const tutorMsgs = await saveMessages(id, "tutor", t.messages);
+  const tutorMsgs = await saveMessages(id, "tutor", outgoing);
   const rewards = t.xp.length ? await award(studentId, t.xp.map((e) => ({ ...e, refId: id })), { hintFreeSolve: t.hintFreeSolve }) : null;
 
   return { session: await getSession(studentId, id), newMessages: [...studentMsg, ...tutorMsgs].map(publicMessage), rewards };
@@ -268,8 +289,9 @@ export async function reveal(studentId: string, id: string): Promise<ActionResul
   const t = revealStep(toState(s), user.language);
   if (!t) throw badRequest("Try the hints first — you might crack it! 💪");
   const gained = t.xp.reduce((sum, e) => sum + e.amount, 0);
+  const outgoing = await withVideos(s, t.messages);
   await persistState(id, t.state, gained);
-  const msgs = await saveMessages(id, "tutor", t.messages);
+  const msgs = await saveMessages(id, "tutor", outgoing);
   const rewards = t.xp.length ? await award(studentId, t.xp.map((e) => ({ ...e, refId: id }))) : null;
   return { session: await getSession(studentId, id), newMessages: msgs.map(publicMessage), rewards };
 }
