@@ -1,25 +1,10 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { createApp } from "./create-app";
+import { aiConfigReady, app } from "./app";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
-import { loadAiConfig } from "./modules/ai/config";
 import { tutorLLM } from "./modules/tutor/llm";
 
-const app = createApp();
-
-// Loads the admin-chosen AI engine from the DB. A failure must not take the API
-// down: log it and keep the .env defaults.
-const aiConfigReady = loadAiConfig().catch((err) => {
-  logger.error({ err }, "Could not load AI settings from the database; using .env defaults");
-});
-
-/** Vercel serverless entry: the app is exported instead of listening on a port. */
-export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  await aiConfigReady;
-  app(req, res);
-}
-
+// Local/long-running server. On Vercel, src/app.ts is the entry instead.
 async function main() {
   await aiConfigReady;
 
@@ -40,4 +25,4 @@ async function main() {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-if (!process.env.VERCEL) void main();
+void main();

@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -15,6 +16,8 @@ import { gamificationRouter } from "./modules/gamification/routes";
 import { guardianRouter } from "./modules/guardian/routes";
 import { tutorLLM } from "./modules/tutor/llm";
 import { aiAdminRouter } from "./modules/ai/routes";
+import { loadAiConfig } from "./modules/ai/config";
+import { logger } from "./lib/logger";
 
 export function createApp() {
   const app = express();
@@ -50,4 +53,21 @@ export function createApp() {
   app.use(notFoundHandler);
   app.use(errorHandler);
   return app;
+}
+
+export const app = createApp();
+
+// Loads the admin-chosen AI engine from the DB. A failure must not take the API
+// down: log it and keep the .env defaults.
+export const aiConfigReady = loadAiConfig().catch((err) => {
+  logger.error({ err }, "Could not load AI settings from the database; using .env defaults");
+});
+
+/**
+ * Vercel serverless entry. Vercel's Express preset picks src/app.ts and needs it
+ * to import express and default-export a handler; src/index.ts is the local server.
+ */
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  await aiConfigReady;
+  app(req, res);
 }
