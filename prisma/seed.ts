@@ -9,16 +9,16 @@ const prisma = new PrismaClient();
 const DEMO_PASSWORD = "Progga@123";
 
 const SUBJECTS = [
-  { id: "math", name: "Mathematics", nameBn: "গণিত", icon: "🔢", color: "#6C4CF1", minGrade: 3, maxGrade: 10 },
+  { id: "math", name: "Mathematics", nameBn: "গণিত", icon: "🔢", color: "#2B7BE8", minGrade: 3, maxGrade: 10 },
   { id: "science", name: "Science", nameBn: "বিজ্ঞান", icon: "🔬", color: "#22C493", minGrade: 3, maxGrade: 10 },
   { id: "english", name: "English", nameBn: "ইংরেজি", icon: "📖", color: "#3BA7FF", minGrade: 3, maxGrade: 12 },
   { id: "bangla", name: "Bangla", nameBn: "বাংলা", icon: "✍️", color: "#FF6B6B", minGrade: 3, maxGrade: 12 },
   { id: "bgs", name: "Bangladesh & Global Studies", nameBn: "বাংলাদেশ ও বিশ্বপরিচয়", icon: "🌏", color: "#FF9F1C", minGrade: 3, maxGrade: 10 },
   { id: "ict", name: "ICT", nameBn: "তথ্য ও যোগাযোগ প্রযুক্তি", icon: "💻", color: "#14B8A6", minGrade: 6, maxGrade: 12 },
-  { id: "physics", name: "Physics", nameBn: "পদার্থবিজ্ঞান", icon: "⚛️", color: "#8B5CF6", minGrade: 9, maxGrade: 12 },
+  { id: "physics", name: "Physics", nameBn: "পদার্থবিজ্ঞান", icon: "⚛️", color: "#0EA5E9", minGrade: 9, maxGrade: 12 },
   { id: "chemistry", name: "Chemistry", nameBn: "রসায়ন", icon: "🧪", color: "#EC4899", minGrade: 9, maxGrade: 12 },
   { id: "biology", name: "Biology", nameBn: "জীববিজ্ঞান", icon: "🧬", color: "#10B981", minGrade: 9, maxGrade: 12 },
-  { id: "higher-math", name: "Higher Math", nameBn: "উচ্চতর গণিত", icon: "📐", color: "#4F46E5", minGrade: 9, maxGrade: 12 },
+  { id: "higher-math", name: "Higher Math", nameBn: "উচ্চতর গণিত", icon: "📐", color: "#1D4ED8", minGrade: 9, maxGrade: 12 },
 ];
 
 // Placeholder videos (public sample files) — replace videoUrl with your own

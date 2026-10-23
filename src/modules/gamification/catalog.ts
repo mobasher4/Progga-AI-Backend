@@ -84,13 +84,13 @@ export interface SkinDef {
 }
 
 export const SKINS: SkinDef[] = [
-  { id: "classic", name: "Classic Grape", cost: 0, palette: { body: "#6C4CF1", accent: "#FFD43B", visor: "#1E1B3A", eye: "#7CF5D4", cheek: "#FF8FA3" } },
+  { id: "classic", name: "Classic Blue", cost: 0, palette: { body: "#2B7BE8", accent: "#FFD43B", visor: "#0F1E3D", eye: "#7CF5D4", cheek: "#FF8FA3" } },
   { id: "mango", name: "Mango Tango", cost: 60, palette: { body: "#FF9F1C", accent: "#FFE66D", visor: "#2B1D0E", eye: "#FFF3B0", cheek: "#FF6B6B" } },
   { id: "mint", name: "Minty Fresh", cost: 80, palette: { body: "#2ED9A3", accent: "#FFD43B", visor: "#103B33", eye: "#B9FFF0", cheek: "#FF8FA3" } },
-  { id: "ocean", name: "Ocean Wave", cost: 120, palette: { body: "#3BA7FF", accent: "#FFD43B", visor: "#0B2545", eye: "#9BF6FF", cheek: "#FFADAD" } },
+  { id: "ocean", name: "Ocean Wave", cost: 120, palette: { body: "#12B5C9", accent: "#FFD43B", visor: "#0B2545", eye: "#9BF6FF", cheek: "#FFADAD" } },
   { id: "rose", name: "Rosy Spark", cost: 120, palette: { body: "#FF6FA5", accent: "#FFE066", visor: "#3A0F24", eye: "#FFD6E8", cheek: "#FFFFFF" } },
-  { id: "ninja", name: "Shadow Ninja", cost: 200, palette: { body: "#2D2A45", accent: "#FF4D6D", visor: "#0D0C17", eye: "#FF4D6D", cheek: "#6C4CF1" } },
-  { id: "galaxy", name: "Galaxy Glow", cost: 300, palette: { body: "#3A0CA3", accent: "#F72585", visor: "#10002B", eye: "#4CC9F0", cheek: "#F72585" } },
+  { id: "ninja", name: "Shadow Ninja", cost: 200, palette: { body: "#2D2A45", accent: "#FF4D6D", visor: "#0D0C17", eye: "#FF4D6D", cheek: "#2B7BE8" } },
+  { id: "galaxy", name: "Galaxy Glow", cost: 300, palette: { body: "#1E3A8A", accent: "#F72585", visor: "#0B1026", eye: "#4CC9F0", cheek: "#F72585" } },
   { id: "gold", name: "Golden Banana", cost: 500, palette: { body: "#F5B700", accent: "#FFFFFF", visor: "#3D2C00", eye: "#FFF8DC", cheek: "#FF9F1C" } },
 ];
 
