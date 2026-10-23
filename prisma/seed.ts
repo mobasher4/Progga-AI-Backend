@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { seedCourses } from "./courses";
 
 const prisma = new PrismaClient();
 
@@ -205,6 +206,8 @@ async function main() {
     prisma.quizQuestion.deleteMany(),
     prisma.lessonProgress.deleteMany(),
     prisma.lesson.deleteMany(),
+    prisma.chapter.deleteMany(),
+    prisma.course.deleteMany(),
     prisma.subject.deleteMany(),
     prisma.xpEvent.deleteMany(),
     prisma.userBadge.deleteMany(),
@@ -217,6 +220,7 @@ async function main() {
 
   for (const [i, s] of SUBJECTS.entries()) await prisma.subject.create({ data: { ...s, order: i } });
   for (const [i, l] of LESSONS.entries()) await prisma.lesson.create({ data: { ...l, order: i, xpReward: 20 } });
+  const courses = await seedCourses(prisma);
   for (const [subjectId, qs] of Object.entries(QUIZ)) {
     await prisma.quizQuestion.createMany({
       data: qs.map(([grade, topic, prompt, options, answerIndex, explanation, difficulty]) => ({
@@ -271,6 +275,7 @@ async function main() {
   }
 
   console.log(`✅ Seeded ${SUBJECTS.length} subjects, ${LESSONS.length} lessons, ${Object.values(QUIZ).flat().length} quiz questions`);
+  console.log(`📚 ${courses.courses} courses, ${courses.chapters} chapters, ${courses.topics} topics`);
   console.log(`👤 Demo logins (password: ${DEMO_PASSWORD}): rafi@demo.progga.ai (student), parent@demo.progga.ai, teacher@demo.progga.ai, admin@demo.progga.ai`);
 }
 

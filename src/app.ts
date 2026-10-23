@@ -11,6 +11,7 @@ import { usersRouter } from "./modules/users/routes";
 import { subjectsRouter } from "./modules/subjects/routes";
 import { tutorRouter } from "./modules/tutor/routes";
 import { lessonsRouter } from "./modules/lessons/routes";
+import { coursesRouter } from "./modules/courses/routes";
 import { quizRouter } from "./modules/quiz/routes";
 import { gamificationRouter } from "./modules/gamification/routes";
 import { guardianRouter } from "./modules/guardian/routes";
@@ -45,6 +46,7 @@ export function createApp() {
   app.use("/api/subjects", subjectsRouter);
   app.use("/api/tutor", tutorRouter);
   app.use("/api/lessons", lessonsRouter);
+  app.use("/api/courses", coursesRouter);
   app.use("/api/quiz", quizRouter);
   app.use("/api/game", gamificationRouter);
   app.use("/api/guardian", guardianRouter);

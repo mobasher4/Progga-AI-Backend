@@ -13,6 +13,7 @@
     "check:llm": "tsx scripts/check-llm.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "db:courses": "tsx prisma/seed-courses.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
     "setup": "prisma db push && tsx prisma/seed.ts"
   },

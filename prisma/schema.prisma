@@ -177,6 +177,36 @@ model Subject {
   order     Int            @default(0)
   lessons   Lesson[]
   questions QuizQuestion[]
+  courses   Course[]
+}
+
+// A class-wise subject course that follows the NCTB textbook: Course → Chapter → Lesson (topic).
+model Course {
+  id          String    @id // slug: physics-10
+  subjectId   String
+  grade       Int
+  title       String
+  titleBn     String    @default("")
+  book        String    @default("") // NCTB textbook the chapters follow
+  description String    @default("")
+  order       Int       @default(0)
+  subject     Subject   @relation(fields: [subjectId], references: [id])
+  chapters    Chapter[]
+
+  @@unique([subjectId, grade])
+}
+
+model Chapter {
+  id       String   @id // physics-10-ch2
+  courseId String
+  number   Int // NCTB chapter number
+  title    String
+  titleBn  String   @default("")
+  summary  String   @default("")
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons  Lesson[]
+
+  @@unique([courseId, number])
 }
 
 model Lesson {
@@ -192,11 +222,17 @@ model Lesson {
   xpReward    Int              @default(20)
   checkpoints Json // [{ atSec, question, options[], answerIndex, explanation }]
   order       Int              @default(0)
+  // Course topics: the chapter they belong to and a written lesson (Markdown + $maths$)
+  chapterId   String?
+  body        String           @default("")
+  readingMin  Int              @default(0)
   createdAt   DateTime         @default(now())
   subject     Subject          @relation(fields: [subjectId], references: [id])
+  unit        Chapter?         @relation(fields: [chapterId], references: [id], onDelete: SetNull)
   progress    LessonProgress[]
 
   @@index([subjectId, grade])
+  @@index([chapterId, order])
 }
 
 model LessonProgress {
@@ -205,6 +241,7 @@ model LessonProgress {
   lessonId           String
   watchedSec         Int      @default(0)
   checkpointsCorrect Json     @default("[]") // indexes answered correctly
+  readDone           Boolean  @default(false) // written lesson marked as read
   completed          Boolean  @default(false)
   updatedAt          DateTime @updatedAt
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
