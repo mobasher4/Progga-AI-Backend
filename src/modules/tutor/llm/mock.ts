@@ -187,7 +187,7 @@ function linearPlan(q: string): Plan | null {
     title: "Solve for the mystery number",
     topic: "Linear equations",
     big_idea: "An equation is a balance: do the same thing to both sides to get the unknown alone.",
-    intro: `Let's crack $${eq}$ together! Think of it as a balance scale ⚖️ — we'll keep it balanced while we free $${v}$.`,
+    intro: `Let's crack $${eq}$ together! Think of it as a balance scale ⚖️ — we'll keep it balanced while we get $${v}$ all alone.`,
     steps,
     final_answer: `${v} = ${ans}`,
     recap: `- Name the unknown\n- Undo adding/subtracting first\n- Then undo multiplying\n- Always do the same to **both** sides`,

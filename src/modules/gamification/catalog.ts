@@ -39,7 +39,7 @@ export const BADGES: BadgeDef[] = [
   { id: "problem_solver", name: "Problem Solver", description: "Solved your first problem with Progga", icon: "🧩", tier: "bronze" },
   { id: "brain_builder", name: "Brain Builder", description: "Solved 10 problems step by step", icon: "🧠", tier: "silver" },
   { id: "think_tank", name: "Think Tank", description: "Solved 50 problems step by step", icon: "🏛️", tier: "gold" },
-  { id: "hint_free_hero", name: "Hint-Free Hero", description: "Solved a whole problem without a single hint", icon: "🦸", tier: "silver" },
+  { id: "hint_free_hero", name: "No-Hint Hero", description: "Solved a whole problem without a single hint", icon: "🦸", tier: "silver" },
   { id: "curious_mind", name: "Curious Mind", description: "Explored 5 concepts with Progga", icon: "🔭", tier: "bronze" },
   { id: "streak_3", name: "On Fire", description: "Learned 3 days in a row", icon: "🔥", tier: "bronze" },
   { id: "streak_7", name: "Week Warrior", description: "Learned 7 days in a row", icon: "⚡", tier: "silver" },
