@@ -10,7 +10,7 @@ export const StepSchema = z.object({
   expected: z.string().describe("The answer or key idea the student should produce for this step. Hidden from the student."),
   options: z
     .array(z.string())
-    .describe("3-4 short plain-text answer choices the student can tap instead of typing: exactly ONE is correct (matches 'expected'), the rest are believable common mistakes. Empty array for open-ended steps."),
+    .describe("Exactly 4 short plain-text answer choices the student can tap instead of typing: exactly ONE is correct (matches 'expected'), the other 3 are believable common mistakes. For open-ended steps: 4 sentence starters or sample answers ending with '…'."),
   hints: z.array(z.string()).describe("Exactly 3 hints, from a gentle nudge to a strong scaffold. None may state the step's answer."),
   why: z.string().describe("1-2 sentences explaining WHY this step works, shown after the student gets it right."),
   explain: z
