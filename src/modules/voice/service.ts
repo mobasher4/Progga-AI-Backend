@@ -9,14 +9,22 @@ const TIMEOUT_MS = 30_000;
 
 export const voiceAvailable = () => env.VOICE_ENABLED && !!env.OPENAI_API_KEY;
 
-/** How Progga should sound — passed to gpt-4o-mini-tts as delivery instructions. */
+/**
+ * How Progga should sound, passed to gpt-4o-mini-tts as delivery instructions:
+ * a kid, so students hear a friend learning alongside them rather than a teacher.
+ * Bump VOICE_STYLE when this changes so clips saved in the old style are re-recorded.
+ */
+const VOICE_STYLE = "kid-3";
+
 function instructions(lang: SpeechLang): string {
+  // Tested on reply-length text: without the "throughout the whole passage" line, voices drift
+  // back into an adult register after the first sentence.
   const base =
-    "You are Progga, a cheerful and kind robot tutor for school children in Bangladesh. " +
-    "Speak warmly and clearly, a little slower than normal conversation, like a patient, encouraging teacher. " +
-    "Use a bright, confident, well-projected voice at full speaking volume, as if talking to a classroom; never whisper or trail off. " +
-    "Sound friendly and curious, never robotic or rushed. Pause briefly between sentences. " +
-    "When reading maths, say each number and operation clearly.";
+    "Identity: a 10-year-old child: Progga, the cheerful robot buddy of a school student in Bangladesh. You ARE a kid, not an adult doing a voice. " +
+    "Pitch: high and light, like a young child, throughout the WHOLE passage, never dropping into an adult register, even in long sentences. " +
+    // the app plays clips ~12% faster (and so younger-sounding), so ask for an unhurried pace
+    "Tone: bubbly, excited, curious, smiling. Pace: unhurried and clear, noticeably slower than a normal chat, with short pauses between sentences. " +
+    "Volume: full and well projected; never whisper or trail off. When reading maths, say each number and operation clearly.";
   return lang === "bn"
     ? `${base} Speak in natural Bangladeshi Bangla with standard Dhaka pronunciation. Read digits as Bangla numbers.`
     : `${base} Speak simple, clear English.`;
@@ -76,7 +84,8 @@ export async function sendSpeech(studentId: string, sessionId: string, messageId
     throw notFound("Message not found");
   }
 
-  const { OPENAI_TTS_VOICE: voice, OPENAI_TTS_MODEL: model } = env;
+  const { OPENAI_TTS_MODEL: model } = env;
+  const voice = `${env.OPENAI_TTS_VOICE}/${VOICE_STYLE}`; // the saved clip must match the voice AND the style
   res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=86400" });
 
   if (message.speech && message.speech.voice === voice && message.speech.model === model) {

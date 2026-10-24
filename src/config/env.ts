@@ -18,6 +18,7 @@ const EnvSchema = z.object({
     .default("true")
     .transform((v) => v === "true"),
   OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
+  // coral, directed as a 10-year-old, stays the most youthful in both English and Bangla
   OPENAI_TTS_VOICE: z.string().default("coral"),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().default("deepseek-flash"),
