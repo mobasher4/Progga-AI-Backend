@@ -76,9 +76,11 @@ model TutorSession {
   hintsUsed     Int            @default(0)
   wrongAttempts Int            @default(0)
   xpEarned      Int            @default(0)
+  lessonId      String? // asked from inside this video lesson
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   student       User           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lesson        Lesson?        @relation(fields: [lessonId], references: [id], onDelete: SetNull)
   messages      TutorMessage[]
 
   @@index([studentId, createdAt])
@@ -94,8 +96,20 @@ model TutorMessage {
   meta      Json?
   createdAt DateTime     @default(now())
   session   TutorSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  speech    SpeechClip?
 
   @@index([sessionId, createdAt])
+}
+
+// Progga's spoken version of a tutor message (read-aloud), generated once and
+// reused on replay. Keyed by voice/model so a settings change regenerates it.
+model SpeechClip {
+  messageId String       @id
+  voice     String
+  model     String
+  audio     Bytes // audio/mpeg
+  createdAt DateTime     @default(now())
+  message   TutorMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
 
 model SafetyEvent {
@@ -230,6 +244,7 @@ model Lesson {
   subject     Subject          @relation(fields: [subjectId], references: [id])
   unit        Chapter?         @relation(fields: [chapterId], references: [id], onDelete: SetNull)
   progress    LessonProgress[]
+  questions   TutorSession[]
 
   @@index([subjectId, grade])
   @@index([chapterId, order])

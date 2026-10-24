@@ -18,6 +18,7 @@ import { guardianRouter } from "./modules/guardian/routes";
 import { tutorLLM } from "./modules/tutor/llm";
 import { aiAdminRouter } from "./modules/ai/routes";
 import { loadAiConfig } from "./modules/ai/config";
+import { voiceAvailable } from "./modules/voice/service";
 import { logger } from "./lib/logger";
 
 export function createApp() {
@@ -37,6 +38,7 @@ export function createApp() {
       ok: true,
       service: "progga-api",
       llm: { provider: tutorLLM.name, model: tutorLLM.model, vision: tutorLLM.supportsImages },
+      voice: voiceAvailable(),
       time: new Date().toISOString(),
     });
   });

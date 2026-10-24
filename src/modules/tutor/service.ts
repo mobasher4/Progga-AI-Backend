@@ -132,9 +132,11 @@ async function logSafety(userId: string, category: string, excerpt: string) {
 
 export async function startSession(
   studentId: string,
-  input: { question: string; subject: string; image?: PlanInput["image"] },
+  input: { question: string; subject: string; image?: PlanInput["image"]; lessonId?: string },
 ) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
+  const lesson = input.lessonId ? await studiedLesson(input.lessonId) : null;
+  const subject = lesson?.subject ?? input.subject;
 
   const startedToday = await prisma.tutorSession.count({
     where: { studentId, createdAt: { gte: dayStartUtc(dayKey()) } },
@@ -154,8 +156,8 @@ export async function startSession(
     return { blocked: true as const, category: screened.category, message: screened.reply };
   }
 
-  const profile = { grade: user.grade ?? 6, language: user.language, subject: input.subject };
-  const plan = await tutorLLM.plan({ profile, question: screened.text, image: input.image });
+  const profile = { grade: user.grade ?? 6, language: user.language, subject };
+  const plan = await tutorLLM.plan({ profile, question: screened.text, image: input.image, lesson: lesson?.context });
 
   if (plan.safety !== "ok" || (plan.mode !== "fact" && plan.steps.length === 0)) {
     if (plan.safety !== "ok" && plan.safety !== "off_topic") await logSafety(studentId, plan.safety, screened.text);
@@ -169,7 +171,8 @@ export async function startSession(
   const session = await prisma.tutorSession.create({
     data: {
       studentId,
-      subject: input.subject,
+      subject,
+      lessonId: lesson?.id,
       grade: profile.grade,
       mode: plan.mode,
       language: user.language,
@@ -193,8 +196,22 @@ export async function startSession(
 
 export async function getSession(studentId: string, id: string) {
   const s = await loadOwned(studentId, id);
-  const messages = await prisma.tutorMessage.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" } });
-  return { ...publicView(s), messages: messages.map(publicMessage) };
+  const [messages, lesson] = await Promise.all([
+    prisma.tutorMessage.findMany({ where: { sessionId: id }, orderBy: { createdAt: "asc" } }),
+    s.lessonId ? prisma.lesson.findUnique({ where: { id: s.lessonId }, select: { id: true, title: true } }) : null,
+  ]);
+  return { ...publicView(s), lesson, messages: messages.map(publicMessage) };
+}
+
+/** What the planner needs to know about the lesson a question was asked from. */
+async function studiedLesson(lessonId: string) {
+  const l = await prisma.lesson.findUnique({ where: { id: lessonId }, include: { unit: { select: { title: true } } } });
+  if (!l) throw notFound("Lesson not found");
+  return {
+    id: l.id,
+    subject: l.subjectId,
+    context: { title: l.title, chapter: l.unit?.title ?? l.chapter, description: l.description, notes: l.body.slice(0, 1500) },
+  };
 }
 
 function publicMessage(m: { id: string; role: string; kind: string; content: string; stepIndex: number | null; meta: unknown; createdAt: Date }) {

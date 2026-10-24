@@ -12,6 +12,13 @@ const EnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-6-luna"),
   OPENAI_BASE_URL: z.url().default("https://api.openai.com/v1"),
+  // Read-aloud: Progga speaks its replies with OpenAI text-to-speech (needs OPENAI_API_KEY).
+  VOICE_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts"),
+  OPENAI_TTS_VOICE: z.string().default("coral"),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_MODEL: z.string().default("deepseek-flash"),
   DEEPSEEK_BASE_URL: z.url().default("https://api.deepseek.com"),

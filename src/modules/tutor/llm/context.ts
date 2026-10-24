@@ -2,7 +2,7 @@
 // DeepSeek see exactly the same lesson context.
 import { LANGUAGE_LABEL, gradeBand } from "../prompts";
 import type { Evaluation, Plan, Step } from "../schemas";
-import type { EvalInput, PlanInput, StudentProfile } from "./types";
+import type { EvalInput, PlanInput, StudentProfile, StudiedLesson } from "./types";
 
 /** Used when a provider declines or filters a question. */
 export const refusedPlan = (p: StudentProfile): Plan => ({
@@ -71,10 +71,24 @@ export function profileBlock(p: StudentProfile): string {
   ].join("\n");
 }
 
+function lessonBlock(l: StudiedLesson): string {
+  return [
+    `<studied_lesson>`,
+    `title: ${l.title}`,
+    l.chapter ? `chapter: ${l.chapter}` : "",
+    l.description ? `about: ${l.description}` : "",
+    l.notes ? `notes (start):\n${l.notes}` : "",
+    `</studied_lesson>`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export function planText(input: PlanInput): string {
   return [
     profileBlock(input.profile),
     input.image ? "The student attached a photo of their question. Read it carefully and restate the problem in your intro." : "",
+    input.lesson ? lessonBlock(input.lesson) : "",
     `<student_question>\n${input.question || "(see photo)"}\n</student_question>`,
   ]
     .filter(Boolean)

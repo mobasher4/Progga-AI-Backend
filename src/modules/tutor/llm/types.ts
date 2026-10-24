@@ -10,6 +10,16 @@ export interface PlanInput {
   profile: StudentProfile;
   question: string;
   image?: { mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; base64: string };
+  /** the video lesson the student asked from, if any */
+  lesson?: StudiedLesson;
+}
+
+export interface StudiedLesson {
+  title: string;
+  chapter: string;
+  description: string;
+  /** start of the written notes (Markdown), may be empty */
+  notes: string;
 }
 
 export interface EvalInput {
