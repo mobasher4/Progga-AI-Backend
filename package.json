@@ -2,7 +2,7 @@
   "name": "progga-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Progga AI — Socratic AI tutor API for students from Class 3 to HSC",
+  "description": "Progga AI — Socratic AI tutor API for students from Class 3 to SSC",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

@@ -1,6 +1,6 @@
 # Progga AI — Backend 🍌🤖
 
-Node.js API for **Progga AI**, a safe Socratic AI tutor for students from Class 3 to HSC (NCTB curriculum). Instead of handing out answers, Progga breaks maths & science problems into a few easy steps the student solves, with a 3-level hint ladder and the *why* behind each step. Factual questions get a direct answer plus extra context.
+Node.js API for **Progga AI**, a safe Socratic AI tutor for students from Class 3 to SSC (NCTB curriculum). Instead of handing out answers, Progga breaks maths & science problems into a few easy steps the student solves, with a 3-level hint ladder and the *why* behind each step. Factual questions get a direct answer plus extra context.
 
 Frontend: [Progga-AI-FontEnd](https://github.com/mobasher4/Progga-AI-FontEnd)
 
