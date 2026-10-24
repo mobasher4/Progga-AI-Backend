@@ -5,7 +5,20 @@ import { leaksAnswer } from "./safety";
 // Pure state machine for a tutoring session. No I/O — easy to unit-test.
 // The service layer persists whatever this returns.
 
-export type MsgKind = "text" | "question" | "hint" | "teach" | "feedback" | "why" | "celebrate" | "recap" | "reveal" | "safety" | "answer";
+export type MsgKind =
+  | "text"
+  | "concept"
+  | "question"
+  | "hint"
+  | "teach"
+  | "feedback"
+  | "why"
+  | "celebrate"
+  | "walkthrough"
+  | "recap"
+  | "reveal"
+  | "safety"
+  | "answer";
 
 export interface OutMessage {
   kind: MsgKind;
@@ -47,7 +60,18 @@ export const soundsStuck = (reply: string): boolean => reply.trim().length <= 80
 export const newProgress = (plan: Plan): StepProgress[] =>
   plan.steps.map(() => ({ attempts: 0, wrong: 0, hintsShown: 0, revealed: false, solved: false, helped: 0 }));
 
-export function openingMessages(plan: Plan): OutMessage[] {
+/** A step's question, after its explanation when the plan teaches as it goes ("Start a lesson"). */
+function askStep(plan: Plan, i: number): OutMessage[] {
+  const step = plan.steps[i];
+  const teach = step.teach?.trim();
+  return [
+    ...(teach ? [{ kind: "teach" as const, content: teach, stepIndex: i, meta: { lesson: true } }] : []),
+    { kind: "question", content: step.prompt, stepIndex: i },
+  ];
+}
+
+/** `lesson`: a syllabus topic taught from scratch, where the opening may give facts away freely. */
+export function openingMessages(plan: Plan, { lesson = false } = {}): OutMessage[] {
   // Facts can't be reasoned out — answer straight away, then widen the student's view.
   if (plan.mode === "fact") {
     return [
@@ -59,7 +83,11 @@ export function openingMessages(plan: Plan): OutMessage[] {
     ];
   }
   const out: OutMessage[] = plan.intro ? [{ kind: "text", content: plan.intro }] : [];
-  if (plan.steps[0]) out.push({ kind: "question", content: plan.steps[0].prompt, stepIndex: 0 });
+  // Teach the idea first so the student has something to think with (dropped if it gives anything away).
+  const keyIdea = plan.key_idea?.trim();
+  const secrets = [plan.final_answer, ...plan.steps.map((s) => s.expected)];
+  if (keyIdea && (lesson || !secrets.some((s) => leaksAnswer(keyIdea, s)))) out.push({ kind: "concept", content: keyIdea });
+  if (plan.steps[0]) out.push(...askStep(plan, 0));
   return out;
 }
 
@@ -91,15 +119,6 @@ const TEXT = {
     stuck: "একদম ঠিক আছে — আটকে যাওয়াও শেখার অংশ! চলো একসাথে বুঝে নিই। 💪",
     nowTry: "**এবার তোমার ধাপটা চেষ্টা করো:**",
   },
-  mix: {
-    solvedClean: "🎉 Ekta hint chara-i tumi puro ta solve korecho. Eta-i asol thinking power!",
-    solved: "🎉 Tumi perecho! Protiti step tomar nijer brainwork.",
-    practice: "**Ebar nije ekta try koro:**",
-    leakGuard: "Cholo ei part ta ekshathe ber kori — tumi onek kache acho!",
-    reveal: (expected: string, why: string) => `Ei step ta holo: **${expected}**\n\n💡 ${why}\n\nChinta nai — ekhon tumi dekhle kivabe kaj kore. Cholo egiye jai!`,
-    stuck: "Ekdom thik ache — atke jawa-o shekhar part! Cholo ekshathe bujhe nei. 💪",
-    nowTry: "**Ebar tomar step ta try koro:**",
-  },
 };
 type Lang = keyof typeof TEXT;
 const text = (lang: string) => TEXT[(lang in TEXT ? lang : "en") as Lang];
@@ -110,7 +129,7 @@ function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp
   const next = state.currentStep + 1;
   if (next < state.plan.steps.length) {
     state.currentStep = next;
-    messages.push({ kind: "question", content: state.plan.steps[next].prompt, stepIndex: next });
+    messages.push(...askStep(state.plan, next));
     return false;
   }
   // Finished the whole path 🎉
@@ -124,6 +143,9 @@ function advance(state: SessionState, messages: OutMessage[], xp: Transition["xp
     content: hintFreeSolve ? tx.solvedClean : tx.solved,
     meta: { finalAnswer: state.plan.final_answer, bigIdea: state.plan.big_idea },
   });
+  // everything is solved now, so the full worked explanation can be shown
+  const walkthrough = state.plan.walkthrough?.trim().replace(/\s*(\*\*(?:Remember|মনে রাখো):?\*\*)/g, "\n\n$1"); // its own paragraph, not the end of the list
+  if (walkthrough) messages.push({ kind: "walkthrough", content: walkthrough });
   if (state.plan.recap) messages.push({ kind: "recap", content: state.plan.recap });
   if (state.plan.practice_problem) {
     messages.push({ kind: "text", content: `${tx.practice} ${state.plan.practice_problem}`, meta: { practice: state.plan.practice_problem } });

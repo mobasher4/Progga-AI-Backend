@@ -1,4 +1,4 @@
-import type { Evaluation, Plan, Step } from "../schemas";
+import type { Evaluation, Plan, Step, Syllabus } from "../schemas";
 
 export interface StudentProfile {
   grade: number;
@@ -12,6 +12,14 @@ export interface PlanInput {
   image?: { mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; base64: string };
   /** the video lesson the student asked from, if any */
   lesson?: StudiedLesson;
+  /** "Start a lesson": teach this syllabus topic from scratch instead of answering a question */
+  learn?: { topic: string; chapter?: string };
+}
+
+export interface SyllabusInput {
+  grade: number;
+  subject: string;
+  language: string;
 }
 
 export interface StudiedLesson {
@@ -41,4 +49,6 @@ export interface TutorLLM {
   evaluate(input: EvalInput): Promise<Evaluation>;
   /** Re-localize an existing plan when the student switches language mid-session. */
   translatePlan(plan: Plan, language: string): Promise<Plan>;
+  /** The NCTB chapters and topics for a class + subject. */
+  syllabus(input: SyllabusInput): Promise<Syllabus>;
 }

@@ -6,13 +6,19 @@ import { z } from "zod";
 
 export const StepSchema = z.object({
   goal: z.string().describe("Short label for this micro-step shown on the student's mission map (max ~8 words)"),
+  teach: z
+    .string()
+    .optional()
+    .describe("Lesson mode only: the short explanation (2-4 sentences, with an example) Progga gives before this step's question. Omit or leave empty otherwise."),
   prompt: z.string().describe("The question Progga asks the student for this step. Never contains the answer."),
   expected: z.string().describe("The answer or key idea the student should produce for this step. Hidden from the student."),
   options: z
     .array(z.string())
     .describe("Exactly 4 short plain-text answer choices the student can tap instead of typing: exactly ONE is correct (matches 'expected'), the other 3 are believable common mistakes. For open-ended steps: 4 sentence starters or sample answers ending with '…'."),
   hints: z.array(z.string()).describe("Exactly 3 hints, from a gentle nudge to a strong scaffold. None may state the step's answer."),
-  why: z.string().describe("1-2 sentences explaining WHY this step works, shown after the student gets it right."),
+  why: z
+    .string()
+    .describe("2-3 sentences shown after the student gets this step right: WHY it works (the rule or fact behind it) and how it connects to the topic or everyday life."),
   explain: z
     .string()
     .describe("Shown when the student is stuck: a warm 3-5 sentence explanation that teaches the idea/method of this step with a worked mini-example using DIFFERENT numbers. Never states this step's answer."),
@@ -26,8 +32,14 @@ export const PlanSchema = z.object({
   topic: z.string().describe("Curriculum topic, e.g. 'Linear equations' or 'Photosynthesis'"),
   big_idea: z.string().describe("The core concept in one kid-friendly sentence"),
   intro: z.string().describe("Warm 1-3 sentence opener that restates the problem and invites the student in. Does not solve anything."),
+  key_idea: z
+    .string()
+    .describe("problem/concept: a short mini-lesson (3-5 sentences) shown before step 1 that teaches the main idea, rule or fact the question needs, in simple words with an everyday example or a worked example using DIFFERENT numbers. Never solves the student's question. Empty for fact mode."),
   steps: z.array(StepSchema),
   final_answer: z.string().describe("The complete final answer. Hidden; used only to check the student's work."),
+  walkthrough: z
+    .string()
+    .describe("problem/concept: shown only after the student finishes. The complete solution explained clearly as numbered steps, each with its reason, ending with the answer and a 'Remember:' line of 1-2 key facts. Empty for fact mode."),
   recap: z.string().describe("2-4 bullet recap of the method, shown only after the student finishes"),
   practice_problem: z.string().describe("One similar problem for the student to try on their own"),
   // "fact" mode only (empty otherwise)
@@ -44,6 +56,18 @@ export const EvalSchema = z.object({
   misconception: z.string().describe("Short internal note of the misconception, for the teacher dashboard. Empty if none."),
 });
 
+export const SyllabusSchema = z.object({
+  chapters: z
+    .array(
+      z.object({
+        title: z.string().describe("Chapter title as in the NCTB textbook"),
+        topics: z.array(z.string()).describe("2-6 main topics taught in this chapter, short titles"),
+      }),
+    )
+    .describe("Every chapter of the textbook, in textbook order"),
+});
+
+export type Syllabus = z.infer<typeof SyllabusSchema>;
 export type Step = z.infer<typeof StepSchema>;
 export type Plan = z.infer<typeof PlanSchema>;
 export type Evaluation = z.infer<typeof EvalSchema>;
@@ -81,9 +105,14 @@ export function normalizePlan(plan: Plan): Plan {
   if (plan.mode === "fact" && !plan.answer.trim()) plan = { ...plan, mode: "concept" };
   if (plan.mode !== "fact" && plan.steps.length === 0 && plan.answer.trim()) plan = { ...plan, mode: "fact" };
 
+  // plans saved before these fields existed
+  plan = { ...plan, key_idea: plan.key_idea ?? "", walkthrough: plan.walkthrough ?? "" };
+
   if (plan.mode === "fact") {
     return {
       ...plan,
+      key_idea: "",
+      walkthrough: "",
       steps: [],
       final_answer: plan.final_answer || plan.answer,
       more_info: plan.more_info.slice(0, 4),
@@ -95,6 +124,7 @@ export function normalizePlan(plan: Plan): Plan {
     options: cleanOptions(s.options),
     hints: (s.hints.length ? s.hints : ["Let's slow down and re-read the question together. What is it asking?"]).slice(0, 3),
     explain: s.explain ?? "",
+    teach: s.teach ?? "",
   }));
   return { ...plan, steps, more_info: [], explore_next: [] };
 }

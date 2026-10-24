@@ -1,7 +1,7 @@
 import type { Prisma, TutorSession } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { dayKey, dayStartUtc } from "../../lib/dates";
-import { badRequest, notFound, tooMany } from "../../lib/errors";
+import { HttpError, badRequest, notFound, tooMany } from "../../lib/errors";
 import { logger } from "../../lib/logger";
 import { award, type Rewards } from "../gamification/service";
 import { relatedLessons } from "../lessons/related";
@@ -50,6 +50,7 @@ function publicView(s: TutorSession) {
     subject: s.subject,
     grade: s.grade,
     mode: s.mode,
+    kind: s.kind,
     status: s.status,
     problemText: s.problemText,
     hadImage: s.hadImage,
@@ -132,11 +133,20 @@ async function logSafety(userId: string, category: string, excerpt: string) {
 
 export async function startSession(
   studentId: string,
-  input: { question: string; subject: string; image?: PlanInput["image"]; lessonId?: string },
+  input: {
+    question: string;
+    subject: string;
+    image?: PlanInput["image"];
+    lessonId?: string;
+    /** "Start a lesson": teach this topic of the chosen class's syllabus from scratch */
+    learn?: { grade: number; topic: string; chapter?: string };
+  },
 ) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
   const lesson = input.lessonId ? await studiedLesson(input.lessonId) : null;
   const subject = lesson?.subject ?? input.subject;
+  const learn = input.learn;
+  if (learn) input = { ...input, question: user.language === "bn" ? `আমাকে শেখাও: ${learn.topic}` : `Teach me: ${learn.topic}` };
 
   const startedToday = await prisma.tutorSession.count({
     where: { studentId, createdAt: { gte: dayStartUtc(dayKey()) } },
@@ -156,8 +166,14 @@ export async function startSession(
     return { blocked: true as const, category: screened.category, message: screened.reply };
   }
 
-  const profile = { grade: user.grade ?? 6, language: user.language, subject };
-  const plan = await tutorLLM.plan({ profile, question: screened.text, image: input.image, lesson: lesson?.context });
+  const profile = { grade: learn?.grade ?? user.grade ?? 6, language: user.language, subject };
+  const plan = await tutorLLM.plan({
+    profile,
+    question: screened.text,
+    image: input.image,
+    lesson: lesson?.context,
+    learn: learn && { topic: learn.topic, chapter: learn.chapter },
+  });
 
   if (plan.safety !== "ok" || (plan.mode !== "fact" && plan.steps.length === 0)) {
     if (plan.safety !== "ok" && plan.safety !== "off_topic") await logSafety(studentId, plan.safety, screened.text);
@@ -175,6 +191,7 @@ export async function startSession(
       lessonId: lesson?.id,
       grade: profile.grade,
       mode: plan.mode,
+      kind: learn ? "lesson" : "question",
       language: user.language,
       // a fact is answered immediately, so the session is complete from the start
       status: plan.mode === "fact" ? "solved" : "active",
@@ -190,8 +207,52 @@ export async function startSession(
   await prisma.tutorMessage.create({
     data: { sessionId: session.id, role: "student", kind: "text", content: screened.text || (user.language === "bn" ? "📷 (প্রশ্নের ছবি পাঠিয়েছি)" : "📷 (sent a photo of the problem)") },
   });
-  await saveMessages(session.id, "tutor", openingMessages(plan));
+  await saveMessages(session.id, "tutor", openingMessages(plan, { lesson: !!learn }));
   return { blocked: false as const, session: await getSession(studentId, session.id) };
+}
+
+/** Removes a chat and everything in it (messages, saved voice clips). XP already earned is kept. */
+export async function deleteSession(studentId: string, id: string) {
+  await loadOwned(studentId, id);
+  await prisma.tutorSession.delete({ where: { id } });
+}
+
+export type SyllabusChapter = { title: string; topics: string[] };
+
+/**
+ * Chapters and topics a student can start a lesson on: our own course for that
+ * class and subject when there is one, otherwise the NCTB syllabus as the AI
+ * knows it (written once, then cached for everyone).
+ */
+export async function syllabus(grade: number, subjectId: string, language: string): Promise<{ chapters: SyllabusChapter[]; source: "course" | "ai" }> {
+  const subject = await prisma.subject.findUnique({ where: { id: subjectId } });
+  if (!subject || grade < subject.minGrade || grade > subject.maxGrade) throw notFound("This subject isn't taught in that class");
+  const lang = language === "bn" ? "bn" : "en";
+
+  const course = await prisma.course.findUnique({
+    where: { subjectId_grade: { subjectId, grade } },
+    include: { chapters: { orderBy: { number: "asc" }, include: { lessons: { orderBy: { order: "asc" }, select: { title: true } } } } },
+  });
+  if (course?.chapters.length) {
+    return {
+      source: "course",
+      chapters: course.chapters.map((c) => ({ title: (lang === "bn" && c.titleBn) || c.title, topics: c.lessons.map((l) => l.title) })),
+    };
+  }
+
+  const cached = await prisma.syllabusCache.findUnique({ where: { grade_subject_language: { grade, subject: subjectId, language: lang } } });
+  if (cached) return { source: "ai", chapters: cached.chapters as unknown as SyllabusChapter[] };
+
+  const result = await tutorLLM.syllabus({ grade, subject: `${subject.name} (${subject.nameBn})`, language: lang });
+  const chapters = result.chapters
+    .map((c) => ({ title: c.title.trim(), topics: c.topics.map((t) => t.trim()).filter(Boolean).slice(0, 8) }))
+    .filter((c) => c.title && c.topics.length)
+    .slice(0, 30);
+  if (!chapters.length) throw new HttpError(502, "Progga couldn't open the syllabus. Please try again!", "syllabus_empty");
+  await prisma.syllabusCache
+    .create({ data: { grade, subject: subjectId, language: lang, chapters: chapters as unknown as Prisma.InputJsonValue } })
+    .catch((err) => logger.warn({ err: (err as Error).message }, "Could not cache syllabus")); // e.g. two students at once
+  return { source: "ai", chapters };
 }
 
 export async function getSession(studentId: string, id: string) {
@@ -226,7 +287,7 @@ export async function listSessions(studentId: string, limit = 30) {
     where: { studentId },
     orderBy: { updatedAt: "desc" },
     take: limit,
-    select: { id: true, title: true, subject: true, topic: true, status: true, mode: true, currentStep: true, xpEarned: true, updatedAt: true, plan: true },
+    select: { id: true, title: true, subject: true, topic: true, status: true, mode: true, kind: true, currentStep: true, xpEarned: true, updatedAt: true, plan: true },
   });
   return rows.map(({ plan, ...r }) => ({ ...r, totalSteps: (plan as unknown as Plan).steps.length }));
 }

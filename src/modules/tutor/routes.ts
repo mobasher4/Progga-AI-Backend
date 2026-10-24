@@ -4,6 +4,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { authed, requireAuth, requireRole } from "../../middleware/auth";
 import { badRequest } from "../../lib/errors";
+import { prisma } from "../../lib/prisma";
 import * as tutor from "./service";
 import { MAX_INPUT_CHARS } from "./safety";
 import { tutorLLM } from "./llm";
@@ -50,6 +51,33 @@ tutorRouter.post("/sessions", aiLimiter, upload.single("image"), async (req, res
 
 tutorRouter.get("/sessions/:id", async (req, res) => {
   res.json({ session: await tutor.getSession(authed(req).id, req.params.id as string) });
+});
+
+tutorRouter.delete("/sessions/:id", async (req, res) => {
+  await tutor.deleteSession(authed(req).id, req.params.id as string);
+  res.status(204).end();
+});
+
+// "Start a lesson": pick a class, a subject and one of its NCTB topics, and Progga teaches it from scratch.
+const SyllabusQuery = z.object({ grade: z.coerce.number().int().min(3).max(10), subject: z.string().min(1).max(40) });
+
+tutorRouter.get("/syllabus", aiLimiter, async (req, res) => {
+  const { grade, subject } = SyllabusQuery.parse(req.query);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: authed(req).id }, select: { language: true } });
+  res.json(await tutor.syllabus(grade, subject, user.language));
+});
+
+const LessonBody = z.object({
+  grade: z.coerce.number().int().min(3).max(10),
+  subject: z.string().min(1).max(40),
+  topic: z.string().trim().min(2).max(160),
+  chapter: z.string().trim().max(160).optional(),
+});
+
+tutorRouter.post("/lessons", aiLimiter, async (req, res) => {
+  const { grade, subject, topic, chapter } = LessonBody.parse(req.body);
+  const result = await tutor.startSession(authed(req).id, { question: "", subject, learn: { grade, topic, chapter } });
+  res.status(result.blocked ? 200 : 201).json(result);
 });
 
 const ReplyBody = z.object({ message: z.string().trim().min(1).max(MAX_INPUT_CHARS) });

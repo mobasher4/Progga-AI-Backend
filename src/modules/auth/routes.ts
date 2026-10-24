@@ -26,7 +26,7 @@ const SignupBody = z
     password: z.string().min(8, "Use at least 8 characters").max(100),
     role: z.enum(["STUDENT", "PARENT", "TEACHER"]).default("STUDENT"),
     grade: z.coerce.number().int().min(3).max(10).optional(), // Class 3 to SSC
-    language: z.enum(["en", "bn", "mix"]).default("en"),
+    language: z.enum(["en", "bn"]).default("en"),
   })
   .refine((b) => b.role !== "STUDENT" || b.grade !== undefined, { message: "Pick your class", path: ["grade"] });
 

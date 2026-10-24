@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { HttpError } from "../../../lib/errors";
 import { logger } from "../../../lib/logger";
-import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, TRANSLATOR_SYSTEM } from "../prompts";
-import { EvalSchema, PlanSchema, normalizePlan, type Evaluation, type Plan } from "../schemas";
+import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, SYLLABUS_SYSTEM, TRANSLATOR_SYSTEM, syllabusText } from "../prompts";
+import { EvalSchema, PlanSchema, SyllabusSchema, normalizePlan, type Evaluation, type Plan, type Syllabus } from "../schemas";
 import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
-import type { EvalInput, PlanInput, TutorLLM } from "./types";
+import type { EvalInput, PlanInput, SyllabusInput, TutorLLM } from "./types";
 
 // One engine for every OpenAI-compatible Chat Completions API (OpenAI, DeepSeek).
 // JSON mode + the exact schema in the system prompt, validated with the same Zod
@@ -50,6 +50,7 @@ ${JSON.stringify(z.toJSONSchema(schema))}`;
 const PLAN_SYSTEM = withJsonContract(PLANNER_SYSTEM, PlanSchema);
 const EVAL_SYSTEM = withJsonContract(EVALUATOR_SYSTEM, EvalSchema);
 const TRANSLATE_SYSTEM = withJsonContract(TRANSLATOR_SYSTEM, PlanSchema);
+const SYLLABUS_JSON_SYSTEM = withJsonContract(SYLLABUS_SYSTEM, SyllabusSchema);
 
 function extractJson(text: string): unknown {
   return JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim());
@@ -100,6 +101,10 @@ export class ChatCompletionsTutor implements TutorLLM {
   async translatePlan(plan: Plan, language: string): Promise<Plan> {
     const translated = await this.structured(PlanSchema, this.opts.model, TRANSLATE_SYSTEM, translateText(plan, language), 8000, this.opts.reasoning?.evaluate);
     return mergeTranslation(plan, normalizePlan(translated));
+  }
+
+  async syllabus({ grade, subject, language }: SyllabusInput): Promise<Syllabus> {
+    return this.structured(SyllabusSchema, this.opts.model, SYLLABUS_JSON_SYSTEM, syllabusText(grade, subject, language), 6000, this.opts.reasoning?.evaluate);
   }
 
   private async structured<T>(

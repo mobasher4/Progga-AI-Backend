@@ -3,10 +3,10 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { env } from "../../../config/env";
 import { HttpError } from "../../../lib/errors";
 import { logger } from "../../../lib/logger";
-import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, TRANSLATOR_SYSTEM } from "../prompts";
-import { EvalSchema, PlanSchema, normalizePlan, type Evaluation, type Plan } from "../schemas";
+import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, SYLLABUS_SYSTEM, TRANSLATOR_SYSTEM, syllabusText } from "../prompts";
+import { EvalSchema, PlanSchema, SyllabusSchema, normalizePlan, type Evaluation, type Plan, type Syllabus } from "../schemas";
 import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
-import type { EvalInput, PlanInput, TutorLLM } from "./types";
+import type { EvalInput, PlanInput, SyllabusInput, TutorLLM } from "./types";
 
 // Server-side fallback: if a safety classifier declines, the API re-runs the
 // request on a fallback model inside the same call.
@@ -74,6 +74,22 @@ export class AnthropicTutor implements TutorLLM {
     );
     if (res.stop_reason === "refusal" || !res.parsed_output) return plan;
     return mergeTranslation(plan, normalizePlan(res.parsed_output));
+  }
+
+  async syllabus({ grade, subject, language }: SyllabusInput): Promise<Syllabus> {
+    const res = await this.call(() =>
+      this.client.beta.messages.parse({
+        model: this.model,
+        max_tokens: 8000,
+        betas: [FALLBACK_BETA],
+        fallbacks: "default",
+        system: [{ type: "text", text: SYLLABUS_SYSTEM, cache_control: { type: "ephemeral" } }],
+        output_config: { effort: "low", format: zodOutputFormat(SyllabusSchema) },
+        messages: [{ role: "user", content: syllabusText(grade, subject, language) }],
+      }),
+    );
+    if (!res.parsed_output) throw new HttpError(502, "Progga couldn't open the syllabus. Please try again!", "llm_parse");
+    return res.parsed_output;
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

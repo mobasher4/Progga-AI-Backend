@@ -12,7 +12,7 @@ usersRouter.use(requireAuth);
 
 const UpdateBody = z.object({
   name: z.string().trim().min(2).max(60).optional(),
-  language: z.enum(["en", "bn", "mix"]).optional(),
+  language: z.enum(["en", "bn"]).optional(),
   grade: z.coerce.number().int().min(3).max(10).optional(), // Class 3 to SSC
 });
 

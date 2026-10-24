@@ -21,7 +21,7 @@ model User {
   name            String
   role            String   @default("STUDENT") // STUDENT | PARENT | TEACHER | ADMIN
   grade           Int? // 3..12 (11-12 = HSC). Students only.
-  language        String   @default("en") // en | bn | mix (Banglish)
+  language        String   @default("en") // en | bn
   avatarSkin      String   @default("classic")
   xp              Int      @default(0)
   coins           Int      @default(0)
@@ -64,6 +64,7 @@ model TutorSession {
   subject       String
   grade         Int
   mode          String // problem | concept | fact
+  kind          String         @default("question") // question (asked by the student) | lesson (a syllabus topic taught from scratch)
   language      String         @default("en") // language the hidden plan is written in
   title         String
   topic         String         @default("")
@@ -103,6 +104,17 @@ model TutorMessage {
 
 // Progga's spoken version of a tutor message (read-aloud), generated once and
 // reused on replay. Keyed by voice/model so a settings change regenerates it.
+/// NCTB chapters and topics for a class + subject without a seeded course, written once by the AI.
+model SyllabusCache {
+  grade     Int
+  subject   String
+  language  String
+  chapters  Json // [{ title, topics: string[] }]
+  createdAt DateTime @default(now())
+
+  @@id([grade, subject, language])
+}
+
 model SpeechClip {
   messageId String       @id
   voice     String

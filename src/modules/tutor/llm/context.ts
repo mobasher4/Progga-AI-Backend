@@ -16,8 +16,10 @@ export const refusedPlan = (p: StudentProfile): Plan => ({
   topic: "",
   big_idea: "",
   intro: "",
+  key_idea: "",
   steps: [],
   final_answer: "",
+  walkthrough: "",
   recap: "",
   practice_problem: "",
   answer: "",
@@ -89,7 +91,9 @@ export function planText(input: PlanInput): string {
     profileBlock(input.profile),
     input.image ? "The student attached a photo of their question. Read it carefully and restate the problem in your intro." : "",
     input.lesson ? lessonBlock(input.lesson) : "",
-    `<student_question>\n${input.question || "(see photo)"}\n</student_question>`,
+    input.learn
+      ? [`<start_lesson>`, `topic: ${input.learn.topic}`, input.learn.chapter ? `chapter: ${input.learn.chapter}` : "", `</start_lesson>`].filter(Boolean).join("\n")
+      : `<student_question>\n${input.question || "(see photo)"}\n</student_question>`,
   ]
     .filter(Boolean)
     .join("\n\n");

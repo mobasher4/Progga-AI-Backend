@@ -1,4 +1,4 @@
-import { normalizePlan, type Evaluation, type Plan, type Step } from "../schemas";
+import { normalizePlan, type Evaluation, type Plan, type Step, type Syllabus } from "../schemas";
 import type { EvalInput, PlanInput, TutorLLM } from "./types";
 
 /**
@@ -14,6 +14,17 @@ export class MockTutor implements TutorLLM {
   async plan({ question }: PlanInput): Promise<Plan> {
     const q = question.replace(/\s+/g, " ").trim();
     return normalizePlan(linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q));
+  }
+
+  /** A small offline syllabus so "Start a lesson" can be demoed without an AI key. */
+  async syllabus(): Promise<Syllabus> {
+    return {
+      chapters: [
+        { title: "Numbers and operations", topics: ["Place value", "Fractions", "Decimals"] },
+        { title: "Algebra", topics: ["Algebraic expressions", "Simple equations"] },
+        { title: "Science around us", topics: ["Plants and photosynthesis", "States of matter"] },
+      ],
+    };
   }
 
   /** The offline tutor only speaks English, so its plans stay as they are. */
@@ -67,6 +78,8 @@ const base = (p: Partial<Plan> & Pick<Plan, "title" | "topic" | "steps" | "final
   mode: "problem",
   big_idea: "",
   intro: "",
+  key_idea: "",
+  walkthrough: "",
   recap: "",
   practice_problem: "",
   answer: "",
@@ -188,8 +201,17 @@ function linearPlan(q: string): Plan | null {
     topic: "Linear equations",
     big_idea: "An equation is a balance: do the same thing to both sides to get the unknown alone.",
     intro: `Let's crack $${eq}$ together! Think of it as a balance scale ⚖️ — we'll keep it balanced while we get $${v}$ all alone.`,
+    key_idea:
+      "An **equation** is like a balance scale ⚖️: the left side and the right side weigh exactly the same. The letter is an *unknown* number. To find it, we **undo** whatever is attached to it, and we always do the same thing to **both** sides so the scale stays balanced. Example: in $y + 4 = 9$, take 4 away from both sides and you get $y = 5$. Now let's use this on your problem!",
     steps,
     final_answer: `${v} = ${ans}`,
+    walkthrough: [
+      `1. The unknown is $${v}$, so our mission is to get it alone.`,
+      `2. ${undo === "subtract" ? "Subtract" : "Add"} ${b} on both sides: $${a === 1 ? "" : a}${v} = ${rhs}$, because that cancels the ${sign}${b}.`,
+      ...(a !== 1 ? [`3. Divide both sides by ${a}: $${v} = ${ans}$, because dividing undoes multiplying.`] : []),
+      `\nSo **$${v} = ${ans}$**.`,
+      `\n**Remember:** whatever you do to one side of an equation, do to the other side too.`,
+    ].join("\n"),
     recap: `- Name the unknown\n- Undo adding/subtracting first\n- Then undo multiplying\n- Always do the same to **both** sides`,
     practice_problem: `$${a + 1}${v} + ${b + 2} = ${(a + 1) * 4 + b + 2}$`,
   });
