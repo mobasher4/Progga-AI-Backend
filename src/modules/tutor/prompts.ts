@@ -35,7 +35,7 @@ For every step write:
 - goal: a short label for the student's mission map ("Find what's unknown", "Undo the +5").
 - prompt: the question you ask. Encouraging, specific, never contains the answer.
 - expected: the answer/key idea you are looking for (hidden from the student).
-- options: EXACTLY 4 different answer choices the student can tap instead of typing (a tapped choice is pasted into their answer box, so they can still edit it). Keep each one short (a number, word or short phrase) and write maths as PLAIN TEXT, not LaTeX (use ×, ÷, ², √, e.g. "2x = 8").
+- options: EXACTLY 4 different answer choices the student can tap instead of typing (a tapped choice is sent as their answer right away). Keep each one short (a number, word or short phrase) and write maths as PLAIN TEXT, not LaTeX (use ×, ÷, ², √, e.g. "2x = 8").
   - Steps with a right answer: exactly ONE option is correct, written the way a student would answer; the other 3 are believable answers from a common mistake for this step (e.g. adding instead of subtracting, forgetting to divide, mixing up two terms), never silly or obviously wrong. No wrong option may equal the final answer.
   - Open-ended steps with no single right answer (e.g. "explain in your own words", "what do you already know?"): 4 different sentence starters or sample answers a student at this level might give, ending with "…" where the student should finish the thought (e.g. "I think it happens because…").
 - hints: exactly 3, escalating: (1) a gentle nudge or reminder of a related idea, (2) a more pointed hint or an everyday analogy, (3) a strong scaffold such as a fill-in-the-blank or a worked example of a DIFFERENT, similar mini-problem. No hint may state this step's answer.

@@ -10,7 +10,9 @@ export type XpReason =
   | "quiz_correct"
   | "quiz_finish"
   | "quest"
-  | "streak";
+  | "streak"
+  | "battle_win"
+  | "battle_played";
 
 /** XP values for every action, tuned so *thinking* pays more than *watching*. */
 export const XP = {
@@ -22,6 +24,10 @@ export const XP = {
   quizCorrect: 5,
   quizFinish: 15,
   quizPerfectBonus: 25,
+  battleWin: 30,
+  battleDraw: 18,
+  battlePlayed: 10,
+  battleCorrect: 2,
 } as const;
 
 // ── Badges ───────────────────────────────────────────────

@@ -1,5 +1,15 @@
 import { normalizePlan, type Evaluation, type Plan, type Step, type Syllabus } from "../schemas";
-import type { EvalInput, PlanInput, TutorLLM } from "./types";
+import type { EvalInput, OnPartial, PlanInput, TutorLLM } from "./types";
+
+/** Plays the result back a few characters at a time, like a real model streaming. */
+async function drip(value: unknown, onPartial?: OnPartial) {
+  if (!onPartial) return;
+  const json = JSON.stringify(value, null, 1);
+  for (let i = 0; i < json.length; i += 6) {
+    onPartial(json.slice(0, i + 6));
+    await new Promise((r) => setTimeout(r, 12));
+  }
+}
 
 /**
  * Offline tutor used when no Claude credentials are configured (local UI work,
@@ -11,9 +21,11 @@ export class MockTutor implements TutorLLM {
   readonly model = "offline";
   readonly supportsImages = true; // photos are accepted but ignored
 
-  async plan({ question }: PlanInput): Promise<Plan> {
+  async plan({ question }: PlanInput, onPartial?: OnPartial): Promise<Plan> {
     const q = question.replace(/\s+/g, " ").trim();
-    return normalizePlan(linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q));
+    const plan = normalizePlan(linearPlan(q) ?? arithmeticPlan(q) ?? factPlan(q) ?? conceptPlan(q));
+    await drip(plan, onPartial);
+    return plan;
   }
 
   /** A small offline syllabus so "Start a lesson" can be demoed without an AI key. */
@@ -32,7 +44,13 @@ export class MockTutor implements TutorLLM {
     return plan;
   }
 
-  async evaluate({ step, reply }: EvalInput): Promise<Evaluation> {
+  async evaluate(input: EvalInput, onPartial?: OnPartial): Promise<Evaluation> {
+    const result = this.judge(input);
+    await drip(result, onPartial);
+    return result;
+  }
+
+  private judge({ step, reply }: EvalInput): Evaluation {
     const r = reply.toLowerCase().trim();
     if (/(just )?(tell|give|show) me (the )?(answer|solution)|i don'?t know|idk|pari na|jani na/.test(r)) {
       return {

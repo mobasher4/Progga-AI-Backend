@@ -17,7 +17,7 @@ async function main() {
   await loadAiConfig();
   console.log(`Tutor brain: ${tutorLLM.name} · ${tutorLLM.model} · photos: ${tutorLLM.supportsImages ? "yes" : "no"}`);
   if (tutorLLM.name === "mock") {
-    console.log("⚠️  No AI key found. Add OPENAI_API_KEY, DEEPSEEK_API_KEY or ANTHROPIC_API_KEY to backend/.env, then run this again.");
+    console.log("⚠️  No AI key found. Add OPENAI_API_KEY, DEEPSEEK_API_KEY, ANTHROPIC_API_KEY or OLLAMA_BASE_URL to backend/.env, then run this again.");
     process.exit(1);
   }
 

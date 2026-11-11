@@ -80,7 +80,7 @@ export function toSpokenText(markdown: string): string {
     .split(/\n+/)
     .map((line) => line.replace(/\s+/g, " ").replace(/\s+([.,!?।:;])/g, "$1").trim())
     .filter(Boolean)
-    .map((line) => (/[.!?।:;]$/.test(line) ? line : `${line}.`))
+    .map((line) => (/[.!?।:;]["'”’)]*$/.test(line) ? line : `${line}${lang === "bn" ? "।" : "."}`))
     .join(" ");
 
   if (s.length > MAX_CHARS) {

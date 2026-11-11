@@ -6,6 +6,9 @@ import { ChatCompletionsTutor, listChatModels } from "./chat-completions";
 import { MockTutor } from "./mock";
 import type { TutorLLM } from "./types";
 
+/** Ollama server root (accepts the URL with or without a trailing /v1). */
+const ollamaRoot = () => (env.OLLAMA_BASE_URL ?? "http://localhost:11434").replace(/\/+$/, "").replace(/\/v1$/, "");
+
 /** Builds an engine for a given provider + models (also used by the admin "Test" button). */
 export function buildTutor(cfg: AiConfig): TutorLLM {
   switch (cfg.provider) {
@@ -30,6 +33,17 @@ export function buildTutor(cfg: AiConfig): TutorLLM {
       });
     case "anthropic":
       return new AnthropicTutor(cfg.model);
+    case "ollama":
+      return new ChatCompletionsTutor({
+        provider: "ollama",
+        baseUrl: ollamaRoot(),
+        apiKey: undefined, // no key: runs on this machine
+        model: cfg.model,
+        vision: true,
+        tokenParam: "max_tokens",
+        timeoutMs: 300_000, // local models on a desktop GPU/CPU are slower than cloud APIs
+        numCtx: env.OLLAMA_NUM_CTX,
+      });
     default:
       return new MockTutor();
   }
@@ -54,8 +68,8 @@ export const tutorLLM: TutorLLM = {
   get supportsImages() {
     return current().supportsImages;
   },
-  plan: (input) => current().plan(input),
-  evaluate: (input) => current().evaluate(input),
+  plan: (input, onPartial) => current().plan(input, onPartial),
+  evaluate: (input, onPartial) => current().evaluate(input, onPartial),
   translatePlan: (plan, language) => current().translatePlan(plan, language),
   syllabus: (input) => current().syllabus(input),
 };
@@ -74,6 +88,8 @@ export async function listModels(provider: ProviderId): Promise<string[]> {
       for await (const m of client.models.list()) ids.push(m.id);
       return ids;
     }
+    case "ollama":
+      return env.OLLAMA_BASE_URL ? listChatModels(`${ollamaRoot()}/v1`, "ollama") : [];
     default:
       return ["offline"];
   }

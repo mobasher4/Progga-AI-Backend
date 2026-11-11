@@ -4,14 +4,14 @@ import { logger } from "../../../lib/logger";
 import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, SYLLABUS_SYSTEM, TRANSLATOR_SYSTEM, syllabusText } from "../prompts";
 import { EvalSchema, PlanSchema, SyllabusSchema, normalizePlan, type Evaluation, type Plan, type Syllabus } from "../schemas";
 import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
-import type { EvalInput, PlanInput, SyllabusInput, TutorLLM } from "./types";
+import type { EvalInput, OnPartial, PlanInput, SyllabusInput, TutorLLM } from "./types";
 
-// One engine for every OpenAI-compatible Chat Completions API (OpenAI, DeepSeek).
+// One engine for every OpenAI-compatible Chat Completions API (OpenAI, DeepSeek, Ollama).
 // JSON mode + the exact schema in the system prompt, validated with the same Zod
 // schemas Claude uses, with one automatic repair attempt on a bad shape.
 
 export interface ChatEngineOptions {
-  provider: "openai" | "deepseek";
+  provider: "openai" | "deepseek" | "ollama";
   baseUrl: string;
   apiKey: string | undefined;
   /** One model for planning, fact answers and reply checking. */
@@ -21,6 +21,10 @@ export interface ChatEngineOptions {
   tokenParam: "max_tokens" | "max_completion_tokens";
   /** OpenAI reasoning models: how hard to think when planning vs. checking a reply. */
   reasoning?: { plan: string; evaluate: string };
+  /** Per-request timeout (default 120s). */
+  timeoutMs?: number;
+  /** Ollama: context window to load the model with (its OpenAI endpoint ignores this, so we use /api/chat). */
+  numCtx?: number;
 }
 
 type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
@@ -28,6 +32,10 @@ type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_u
 interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string | ContentPart[];
+}
+
+interface StreamChunk {
+  choices?: { delta?: { content?: string | null; refusal?: string | null }; finish_reason?: string | null }[];
 }
 
 interface ChatResponse {
@@ -56,6 +64,34 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim());
 }
 
+/**
+ * Smaller (local) models sometimes drop the fields at the end of a long plan.
+ * Those are only shown after the student finishes (or are fact-mode extras),
+ * so missing ones become empty instead of failing the whole plan.
+ */
+const PLAN_TAIL_DEFAULTS: Record<string, string | string[]> = {
+  safety_reply: "",
+  key_idea: "",
+  walkthrough: "",
+  recap: "",
+  practice_problem: "",
+  answer: "",
+  more_info: [],
+  fun_fact: "",
+  explore_next: [],
+};
+function fillPlanTail(schema: z.ZodType, value: unknown): unknown {
+  if (schema !== (PlanSchema as z.ZodType) || !value || typeof value !== "object") return value;
+  const plan = { ...PLAN_TAIL_DEFAULTS, ...(value as Record<string, unknown>) };
+  // "bullet recap" / "numbered walkthrough" sometimes come back as lists of lines
+  for (const key of ["recap", "walkthrough", "final_answer"]) {
+    const v = plan[key];
+    if (Array.isArray(v)) plan[key] = v.map((line) => (key === "recap" && !/^\s*[-*•]/.test(String(line)) ? `- ${line}` : String(line))).join("\n");
+  }
+  if (typeof plan.final_answer !== "string") plan.final_answer = typeof plan.answer === "string" ? plan.answer : "";
+  return plan;
+}
+
 class FilteredError extends Error {}
 
 export class ChatCompletionsTutor implements TutorLLM {
@@ -69,7 +105,7 @@ export class ChatCompletionsTutor implements TutorLLM {
     this.supportsImages = opts.vision;
   }
 
-  async plan(input: PlanInput): Promise<Plan> {
+  async plan(input: PlanInput, onPartial?: OnPartial): Promise<Plan> {
     if (input.image && !this.opts.vision) {
       throw new HttpError(400, "Progga can't read photos right now. Please type your question instead! ✏️", "no_vision");
     }
@@ -81,7 +117,7 @@ export class ChatCompletionsTutor implements TutorLLM {
         ]
       : text;
     try {
-      const plan = await this.structured(PlanSchema, this.opts.model, PLAN_SYSTEM, user, 8000, this.opts.reasoning?.plan);
+      const plan = await this.structured(PlanSchema, this.opts.model, PLAN_SYSTEM, user, 8000, this.opts.reasoning?.plan, onPartial);
       return normalizePlan(plan);
     } catch (err) {
       if (err instanceof FilteredError) return refusedPlan(input.profile);
@@ -89,9 +125,9 @@ export class ChatCompletionsTutor implements TutorLLM {
     }
   }
 
-  async evaluate(input: EvalInput): Promise<Evaluation> {
+  async evaluate(input: EvalInput, onPartial?: OnPartial): Promise<Evaluation> {
     try {
-      return await this.structured(EvalSchema, this.opts.model, EVAL_SYSTEM, evalText(input), 2000, this.opts.reasoning?.evaluate);
+      return await this.structured(EvalSchema, this.opts.model, EVAL_SYSTEM, evalText(input), 2000, this.opts.reasoning?.evaluate, onPartial);
     } catch (err) {
       if (err instanceof FilteredError) return offTrackEvaluation(input.step);
       throw err;
@@ -114,22 +150,24 @@ export class ChatCompletionsTutor implements TutorLLM {
     user: ChatMessage["content"],
     maxTokens: number,
     reasoning: string | undefined,
+    onPartial?: OnPartial,
   ): Promise<T> {
     const messages: ChatMessage[] = [
       { role: "system", content: system },
       { role: "user", content: user },
     ];
     for (let attempt = 0; attempt < 2; attempt++) {
-      const content = await this.chat(model, messages, maxTokens, reasoning);
+      if (attempt > 0) onPartial?.(""); // the repaired answer streams from the start again
+      const content = await this.chat(model, messages, maxTokens, reasoning, onPartial);
       let problem: string;
       try {
-        const parsed = schema.safeParse(extractJson(content));
+        const parsed = schema.safeParse(fillPlanTail(schema, extractJson(content)));
         if (parsed.success) return parsed.data;
         problem = z.prettifyError(parsed.error);
       } catch {
         problem = "The response was not valid JSON.";
       }
-      logger.warn({ provider: this.name, model, attempt, problem }, "AI returned an invalid shape");
+      logger.warn({ provider: this.name, model, attempt, problem, sample: content.slice(0, 300) }, "AI returned an invalid shape");
       messages.push(
         { role: "assistant", content },
         { role: "user", content: `That JSON did not match the schema:\n${problem}\nReply again with only the corrected JSON object.` },
@@ -138,7 +176,8 @@ export class ChatCompletionsTutor implements TutorLLM {
     throw new HttpError(502, "Progga got a bit confused. Please try again!", "llm_parse");
   }
 
-  private async chat(model: string, messages: ChatMessage[], maxTokens: number, reasoning: string | undefined): Promise<string> {
+  private async chat(model: string, messages: ChatMessage[], maxTokens: number, reasoning: string | undefined, onPartial?: OnPartial): Promise<string> {
+    if (this.opts.provider === "ollama") return this.ollamaChat(model, messages, maxTokens, onPartial);
     if (!this.opts.apiKey) throw new HttpError(503, "Progga's brain is offline right now.", "llm_auth");
 
     const body: Record<string, unknown> = {
@@ -146,6 +185,7 @@ export class ChatCompletionsTutor implements TutorLLM {
       messages,
       response_format: { type: "json_object" },
       [this.opts.tokenParam]: maxTokens,
+      ...(onPartial ? { stream: true } : {}),
     };
     if (reasoning && !noReasoning.has(model)) body.reasoning_effort = reasoning;
     logger.debug({ provider: this.name, model, task: messages[0].content === EVAL_SYSTEM ? "check" : "plan" }, "AI call");
@@ -156,7 +196,7 @@ export class ChatCompletionsTutor implements TutorLLM {
         method: "POST",
         headers: { Authorization: `Bearer ${this.opts.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(this.opts.timeoutMs ?? TIMEOUT_MS),
       });
     } catch (err) {
       logger.error({ provider: this.name, err: (err as Error).message }, "AI request failed");
@@ -168,7 +208,7 @@ export class ChatCompletionsTutor implements TutorLLM {
       // Older (non-reasoning) models reject reasoning_effort: remember and retry without it.
       if (res.status === 400 && body.reasoning_effort && /reasoning_effort/i.test(detail)) {
         noReasoning.add(model);
-        return this.chat(model, messages, maxTokens, undefined);
+        return this.chat(model, messages, maxTokens, undefined, onPartial);
       }
       logger.error({ provider: this.name, model, status: res.status, detail: detail.slice(0, 300) }, "AI API error");
       if (res.status === 401) throw new HttpError(503, "Progga's brain is offline right now.", "llm_auth");
@@ -178,11 +218,116 @@ export class ChatCompletionsTutor implements TutorLLM {
       throw new HttpError(502, "Progga couldn't think that through. Please try again.", "llm_error");
     }
 
-    const data = (await res.json()) as ChatResponse;
-    const choice = data.choices?.[0];
-    if (choice?.finish_reason === "content_filter" || choice?.message?.refusal) throw new FilteredError("filtered");
-    const content = choice?.message?.content;
+    let content: string | null | undefined;
+    let filtered = false;
+    if (onPartial) {
+      // Server-Sent Events: `data: {choices:[{delta:{content}}]}` … `data: [DONE]`
+      let streamed = "";
+      await this.readLines(res, (line) => {
+        if (!line.startsWith("data:")) return;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") return;
+        const choice = (JSON.parse(payload) as StreamChunk).choices?.[0];
+        if (choice?.finish_reason === "content_filter" || choice?.delta?.refusal) filtered = true;
+        if (choice?.delta?.content) {
+          streamed += choice.delta.content;
+          onPartial(streamed);
+        }
+      });
+      content = streamed;
+    } else {
+      const choice = ((await res.json()) as ChatResponse).choices?.[0];
+      filtered = choice?.finish_reason === "content_filter" || !!choice?.message?.refusal;
+      content = choice?.message?.content;
+    }
+    if (filtered) throw new FilteredError("filtered");
     if (!content) throw new HttpError(502, "Progga got a bit confused. Please try again!", "llm_empty");
+    return content;
+  }
+
+  /** Reads a streamed response line by line (SSE or NDJSON). */
+  private async readLines(res: Response, onLine: (line: string) => void) {
+    if (!res.body) throw new HttpError(502, "Progga got a bit confused. Please try again!", "llm_empty");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) if (line.trim()) onLine(line.trim());
+      }
+      if (buffer.trim()) onLine(buffer.trim());
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      if (err instanceof SyntaxError) throw new HttpError(502, "Progga got a bit confused. Please try again!", "llm_error");
+      logger.error({ provider: this.name, err: (err as Error).message }, "AI stream broke off");
+      throw new HttpError(503, "Progga is taking too long to think. Please try again.", "llm_timeout");
+    }
+  }
+
+  /** Ollama's native API: lets us set the context window and turn "thinking" off, which /v1 can't. */
+  private async ollamaChat(model: string, messages: ChatMessage[], maxTokens: number, onPartial?: OnPartial): Promise<string> {
+    const body = {
+      model,
+      stream: !!onPartial,
+      format: "json",
+      think: false,
+      options: { num_ctx: this.opts.numCtx ?? 16384, num_predict: maxTokens },
+      messages: messages.map((m) =>
+        typeof m.content === "string"
+          ? { role: m.role, content: m.content }
+          : {
+              role: m.role,
+              content: m.content.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("\n"),
+              images: m.content.flatMap((p) => (p.type === "image_url" ? [p.image_url.url.replace(/^data:[^,]*,/, "")] : [])),
+            },
+      ),
+    };
+    logger.debug({ provider: this.name, model }, "AI call");
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.opts.baseUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.opts.timeoutMs ?? TIMEOUT_MS),
+      });
+    } catch (err) {
+      logger.error({ provider: this.name, err: (err as Error).message }, "AI request failed");
+      throw new HttpError(503, "Progga's local brain isn't answering. Is Ollama running?", "llm_timeout");
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      logger.error({ provider: this.name, model, status: res.status, detail: detail.slice(0, 300) }, "AI API error");
+      if (res.status === 404) throw new HttpError(503, `The local model "${model}" isn't installed. Run: ollama pull ${model}`, "llm_model");
+      throw new HttpError(502, "Progga couldn't think that through. Please try again.", "llm_error");
+    }
+    type OllamaChunk = { message?: { content?: string }; done_reason?: string; error?: string };
+    let content = "";
+    let doneReason: string | undefined;
+    if (onPartial) {
+      // one JSON object per line, the last with `done: true`
+      await this.readLines(res, (line) => {
+        const chunk = JSON.parse(line) as OllamaChunk;
+        if (chunk.error) {
+          logger.error({ provider: this.name, model, error: chunk.error }, "AI stream error");
+          throw new HttpError(502, "Progga couldn't think that through. Please try again.", "llm_error");
+        }
+        if (chunk.done_reason) doneReason = chunk.done_reason;
+        if (chunk.message?.content) {
+          content += chunk.message.content;
+          onPartial(content);
+        }
+      });
+    } else {
+      const data = (await res.json()) as OllamaChunk;
+      content = data.message?.content ?? "";
+      doneReason = data.done_reason;
+    }
+    if (!content) throw new HttpError(502, "Progga got a bit confused. Please try again!", "llm_empty");
+    if (doneReason === "length") logger.warn({ provider: this.name, model, maxTokens }, "Local model hit its token limit");
     return content;
   }
 }

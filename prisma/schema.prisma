@@ -43,6 +43,9 @@ model User {
   safetyEvents   SafetyEvent[]
   guardianOf     GuardianLink[]   @relation("guardian")
   guardedBy      GuardianLink[]   @relation("student")
+  battleProfiles BattleProfile[]
+  battleTicket   BattleTicket?
+  battlePlayers  BattlePlayer[]
 }
 
 model GuardianLink {
@@ -309,4 +312,81 @@ model QuizAttempt {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+// ── Battle Arena (1v1 live quiz battles, one trophy league per class) ──
+
+/// A student's trophies and record in one class's league.
+model BattleProfile {
+  id           String   @id @default(cuid())
+  userId       String
+  grade        Int
+  trophies     Int      @default(0)
+  bestTrophies Int      @default(0)
+  wins         Int      @default(0)
+  losses       Int      @default(0)
+  draws        Int      @default(0)
+  winStreak    Int      @default(0) // current form: +3 = three wins in a row, −2 = two losses in a row
+  bestStreak   Int      @default(0)
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, grade])
+  @@index([grade, trophies])
+}
+
+/// A student waiting in matchmaking. One per student; removed once matched or cancelled.
+model BattleTicket {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  grade      Int
+  trophies   Int
+  botAt      DateTime // when to stop waiting for a human and bring in a practice rival
+  lastSeenAt DateTime @default(now()) // tickets that stop polling are skipped by matchmaking
+  battleId   String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([grade, battleId, lastSeenAt])
+}
+
+model Battle {
+  id         String         @id @default(cuid())
+  grade      Int
+  difficulty Int // 1..5, from the players' league
+  vsBot      Boolean        @default(false)
+  questions  Json // [{ id, subject, topic, prompt, promptBn, options, optionsBn, answerIndex, explanation }]
+  startsAt   DateTime
+  deadline   DateTime // after this, unanswered questions count as timeouts
+  status     String         @default("live") // live | done
+  finishedAt DateTime?
+  createdAt  DateTime       @default(now())
+  players    BattlePlayer[]
+
+  @@index([status, deadline])
+}
+
+model BattlePlayer {
+  id                String    @id @default(cuid())
+  battleId          String
+  userId            String? // null for a practice rival (bot)
+  isBot             Boolean   @default(false)
+  name              String
+  skin              String    @default("classic")
+  level             Int       @default(1)
+  trophiesBefore    Int
+  answers           Json      @default("[]") // [{ choice, correct, ms, at }]; a bot's are planned ahead with `at` = ms after start
+  answered          Int       @default(0) // questions answered (or timed out) so far
+  score2            Int       @default(0) // score × 2 (correct +2, wrong −1) so −0.5 stays an integer
+  totalMs           Int       @default(0) // thinking time, the tie-breaker
+  questionStartedAt DateTime
+  finishedAt        DateTime?
+  result            String? // win | loss | draw
+  trophyDelta       Int       @default(0)
+  xpGained          Int       @default(0)
+  battle            Battle    @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  user              User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([battleId])
+  @@index([userId, battleId])
 }

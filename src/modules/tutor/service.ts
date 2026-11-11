@@ -16,9 +16,10 @@ import {
   type OutMessage,
   type SessionState,
 } from "./engine";
-import { tutorLLM } from "./llm";
+import { tutorLLM, type TutorLLM } from "./llm";
 import type { PlanInput } from "./llm/types";
 import { screenInput } from "./safety";
+import { evalPreview, planPreview, previewer, type OnPreview } from "./stream-preview";
 import type { Plan, StepProgress } from "./schemas";
 
 const RECENT_MESSAGES = 8;
@@ -141,6 +142,10 @@ export async function startSession(
     /** "Start a lesson": teach this topic of the chosen class's syllabus from scratch */
     learn?: { grade: number; topic: string; chapter?: string };
   },
+  /** live, word-by-word preview of Progga's opening while the AI writes it */
+  onPreview?: OnPreview,
+  /** the engine the student picked (default: the admin's choice) */
+  llm: TutorLLM = tutorLLM,
 ) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
   const lesson = input.lessonId ? await studiedLesson(input.lessonId) : null;
@@ -167,13 +172,16 @@ export async function startSession(
   }
 
   const profile = { grade: learn?.grade ?? user.grade ?? 6, language: user.language, subject };
-  const plan = await tutorLLM.plan({
-    profile,
-    question: screened.text,
-    image: input.image,
-    lesson: lesson?.context,
-    learn: learn && { topic: learn.topic, chapter: learn.chapter },
-  });
+  const plan = await llm.plan(
+    {
+      profile,
+      question: screened.text,
+      image: input.image,
+      lesson: lesson?.context,
+      learn: learn && { topic: learn.topic, chapter: learn.chapter },
+    },
+    previewer((json) => planPreview(json, { lesson: !!learn }), onPreview),
+  );
 
   if (plan.safety !== "ok" || (plan.mode !== "fact" && plan.steps.length === 0)) {
     if (plan.safety !== "ok" && plan.safety !== "off_topic") await logSafety(studentId, plan.safety, screened.text);
@@ -298,10 +306,10 @@ type ActionResult = { session: Awaited<ReturnType<typeof getSession>>; newMessag
  * The student switched language mid-session: translate the rest of the hidden
  * plan once (steps, hints, "why"), so everything after the switch matches.
  */
-async function inLanguage(s: TutorSession, language: string): Promise<TutorSession> {
+async function inLanguage(s: TutorSession, language: string, llm: TutorLLM = tutorLLM): Promise<TutorSession> {
   if (s.language === language || s.status !== "active") return s;
   try {
-    const plan = await tutorLLM.translatePlan(s.plan as unknown as Plan, language);
+    const plan = await llm.translatePlan(s.plan as unknown as Plan, language);
     return await prisma.tutorSession.update({ where: { id: s.id }, data: { plan: plan as unknown as Prisma.InputJsonValue, language } });
   } catch (err) {
     logger.warn({ err: (err as Error).message, sessionId: s.id }, "Plan translation failed; continuing in the original language");
@@ -309,11 +317,11 @@ async function inLanguage(s: TutorSession, language: string): Promise<TutorSessi
   }
 }
 
-export async function reply(studentId: string, id: string, raw: string): Promise<ActionResult> {
+export async function reply(studentId: string, id: string, raw: string, onPreview?: OnPreview, llm: TutorLLM = tutorLLM): Promise<ActionResult> {
   let s = await loadOwned(studentId, id);
   if (s.status !== "active") throw badRequest("This adventure is finished — start a new one!");
   const user = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
-  s = await inLanguage(s, user.language);
+  s = await inLanguage(s, user.language, llm);
 
   const screened = screenInput(raw, user.language);
   const studentMsg = await saveMessages(id, "student", [{ kind: "text", content: screened.text, stepIndex: s.currentStep }]);
@@ -325,21 +333,25 @@ export async function reply(studentId: string, id: string, raw: string): Promise
   }
 
   const state = toState(s);
+  const step = state.plan.steps[state.currentStep];
   const recent = await prisma.tutorMessage.findMany({ where: { sessionId: id }, orderBy: { createdAt: "desc" }, take: RECENT_MESSAGES + 1 });
   const evaluation = soundsStuck(screened.text)
     ? { verdict: "stuck" as const, feedback: "", follow_up: "", misconception: "" }
-    : await tutorLLM.evaluate({
-        profile: { grade: s.grade, language: user.language, subject: s.subject },
-        problem: s.problemText,
-        plan: state.plan,
-        stepIndex: state.currentStep,
-        step: state.plan.steps[state.currentStep],
-        recent: recent
-          .slice(1) // skip the reply we just stored
-          .reverse()
-          .map((m) => ({ role: m.role as "student" | "tutor", content: m.content })),
-        reply: screened.text,
-      });
+    : await llm.evaluate(
+        {
+          profile: { grade: s.grade, language: user.language, subject: s.subject },
+          problem: s.problemText,
+          plan: state.plan,
+          stepIndex: state.currentStep,
+          step,
+          recent: recent
+            .slice(1) // skip the reply we just stored
+            .reverse()
+            .map((m) => ({ role: m.role as "student" | "tutor", content: m.content })),
+          reply: screened.text,
+        },
+        previewer((json) => evalPreview(json, [step.expected, state.plan.final_answer]), onPreview),
+      );
 
   const t = applyEvaluation(state, evaluation, user.language);
   if (t.safetyCategory === "wellbeing") await logSafety(studentId, "wellbeing", screened.text);

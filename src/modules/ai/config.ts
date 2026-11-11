@@ -6,7 +6,7 @@ import { logger } from "../../lib/logger";
 // Which AI engine Progga uses right now. Defaults come from .env; an admin can
 // switch provider/model at runtime from AI settings, which is saved in the DB.
 
-export const PROVIDER_IDS = ["openai", "deepseek", "anthropic", "mock"] as const;
+export const PROVIDER_IDS = ["openai", "deepseek", "anthropic", "ollama", "mock"] as const;
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 
 export interface ProviderInfo {
@@ -22,6 +22,7 @@ export function providers(): ProviderInfo[] {
     { id: "openai", label: "OpenAI", configured: !!env.OPENAI_API_KEY, vision: true, defaultModel: env.OPENAI_MODEL },
     { id: "deepseek", label: "DeepSeek", configured: !!env.DEEPSEEK_API_KEY, vision: false, defaultModel: env.DEEPSEEK_MODEL },
     { id: "anthropic", label: "Anthropic Claude", configured: !!env.ANTHROPIC_API_KEY, vision: true, defaultModel: env.ANTHROPIC_MODEL },
+    { id: "ollama", label: "Local (Ollama)", configured: !!env.OLLAMA_BASE_URL, vision: true, defaultModel: env.OLLAMA_MODEL },
     { id: "mock", label: "Offline practice (mock)", configured: true, vision: true, defaultModel: "offline" },
   ];
 }

@@ -16,3 +16,7 @@ dist/
 # misc
 *.log
 .DS_Store
+
+# self-hosted IndicF5 voice server (Python)
+indicf5/.venv/
+__pycache__/

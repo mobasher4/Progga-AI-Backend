@@ -6,7 +6,7 @@ import { logger } from "../../../lib/logger";
 import { EVALUATOR_SYSTEM, PLANNER_SYSTEM, SYLLABUS_SYSTEM, TRANSLATOR_SYSTEM, syllabusText } from "../prompts";
 import { EvalSchema, PlanSchema, SyllabusSchema, normalizePlan, type Evaluation, type Plan, type Syllabus } from "../schemas";
 import { evalText, mergeTranslation, offTrackEvaluation, planText, refusedPlan, translateText } from "./context";
-import type { EvalInput, PlanInput, SyllabusInput, TutorLLM } from "./types";
+import type { EvalInput, OnPartial, PlanInput, SyllabusInput, TutorLLM } from "./types";
 
 // Server-side fallback: if a safety classifier declines, the API re-runs the
 // request on a fallback model inside the same call.
@@ -19,7 +19,7 @@ export class AnthropicTutor implements TutorLLM {
 
   constructor(readonly model: string) {}
 
-  async plan(input: PlanInput): Promise<Plan> {
+  async plan(input: PlanInput, onPartial?: OnPartial): Promise<Plan> {
     const content: Anthropic.Beta.BetaContentBlockParam[] = [];
     if (input.image) {
       content.push({ type: "image", source: { type: "base64", media_type: input.image.mediaType, data: input.image.base64 } });
@@ -27,15 +27,18 @@ export class AnthropicTutor implements TutorLLM {
     content.push({ type: "text", text: planText(input) });
 
     const res = await this.call(() =>
-      this.client.beta.messages.parse({
-        model: this.model,
-        max_tokens: 16000,
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-        system: [{ type: "text", text: PLANNER_SYSTEM, cache_control: { type: "ephemeral" } }],
-        output_config: { effort: "medium", format: zodOutputFormat(PlanSchema) },
-        messages: [{ role: "user", content }],
-      }),
+      this.parseOrStream(
+        {
+          model: this.model,
+          max_tokens: 16000,
+          betas: [FALLBACK_BETA],
+          fallbacks: "default",
+          system: [{ type: "text", text: PLANNER_SYSTEM, cache_control: { type: "ephemeral" } }],
+          output_config: { effort: "medium", format: zodOutputFormat(PlanSchema) },
+          messages: [{ role: "user", content }],
+        },
+        onPartial,
+      ),
     );
 
     if (res.stop_reason === "refusal") return refusedPlan(input.profile);
@@ -43,17 +46,20 @@ export class AnthropicTutor implements TutorLLM {
     return normalizePlan(res.parsed_output);
   }
 
-  async evaluate(input: EvalInput): Promise<Evaluation> {
+  async evaluate(input: EvalInput, onPartial?: OnPartial): Promise<Evaluation> {
     const res = await this.call(() =>
-      this.client.beta.messages.parse({
-        model: this.model,
-        max_tokens: 4000,
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-        system: [{ type: "text", text: EVALUATOR_SYSTEM, cache_control: { type: "ephemeral" } }],
-        output_config: { effort: "low", format: zodOutputFormat(EvalSchema) },
-        messages: [{ role: "user", content: evalText(input) }],
-      }),
+      this.parseOrStream(
+        {
+          model: this.model,
+          max_tokens: 4000,
+          betas: [FALLBACK_BETA],
+          fallbacks: "default",
+          system: [{ type: "text", text: EVALUATOR_SYSTEM, cache_control: { type: "ephemeral" } }],
+          output_config: { effort: "low", format: zodOutputFormat(EvalSchema) },
+          messages: [{ role: "user", content: evalText(input) }],
+        },
+        onPartial,
+      ),
     );
 
     if (res.stop_reason === "refusal" || !res.parsed_output) return offTrackEvaluation(input.step);
@@ -90,6 +96,16 @@ export class AnthropicTutor implements TutorLLM {
     );
     if (!res.parsed_output) throw new HttpError(502, "Progga couldn't open the syllabus. Please try again!", "llm_parse");
     return res.parsed_output;
+  }
+
+  /** Same result as `parse`; with `onPartial`, the JSON is also passed on as it streams in. */
+  private parseOrStream<P extends Parameters<Anthropic["beta"]["messages"]["parse"]>[0]>(params: P, onPartial?: OnPartial) {
+    const parsed = () => this.client.beta.messages.parse(params);
+    if (!onPartial) return parsed();
+    // stream() takes the same body and its final message carries the same parsed_output
+    const stream = this.client.beta.messages.stream(params as Parameters<Anthropic["beta"]["messages"]["stream"]>[0]);
+    stream.on("text", (_delta, snapshot) => onPartial(snapshot));
+    return stream.finalMessage() as unknown as ReturnType<typeof parsed>;
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

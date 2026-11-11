@@ -15,10 +15,13 @@ import { coursesRouter } from "./modules/courses/routes";
 import { quizRouter } from "./modules/quiz/routes";
 import { gamificationRouter } from "./modules/gamification/routes";
 import { guardianRouter } from "./modules/guardian/routes";
+import { battleRouter } from "./modules/battle/routes";
 import { tutorLLM } from "./modules/tutor/llm";
 import { aiAdminRouter } from "./modules/ai/routes";
 import { loadAiConfig } from "./modules/ai/config";
-import { voiceAvailable } from "./modules/voice/service";
+import { voiceAvailable, voiceLift } from "./modules/voice/service";
+import { loadVoiceConfig } from "./modules/voice/engines";
+import { voiceAdminRouter } from "./modules/voice/routes";
 import { logger } from "./lib/logger";
 
 export function createApp() {
@@ -30,7 +33,14 @@ export function createApp() {
   app.use(cookieParser());
   app.use(
     "/api",
-    rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false }),
+    rateLimit({
+      windowMs: 60_000,
+      limit: 300,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      // live battles poll every second and are limited per student in their own router
+      skip: (req) => req.path.startsWith("/battle/"),
+    }),
   );
 
   app.get("/api/health", (_req, res) => {
@@ -39,6 +49,7 @@ export function createApp() {
       service: "progga-api",
       llm: { provider: tutorLLM.name, model: tutorLLM.model, vision: tutorLLM.supportsImages },
       voice: voiceAvailable(),
+      voiceLift: voiceLift(),
       time: new Date().toISOString(),
     });
   });
@@ -52,7 +63,9 @@ export function createApp() {
   app.use("/api/quiz", quizRouter);
   app.use("/api/game", gamificationRouter);
   app.use("/api/guardian", guardianRouter);
+  app.use("/api/battle", battleRouter);
   app.use("/api/admin/ai", aiAdminRouter);
+  app.use("/api/admin/voice", voiceAdminRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
@@ -63,9 +76,14 @@ export const app = createApp();
 
 // Loads the admin-chosen AI engine from the DB. A failure must not take the API
 // down: log it and keep the .env defaults.
-export const aiConfigReady = loadAiConfig().catch((err) => {
-  logger.error({ err }, "Could not load AI settings from the database; using .env defaults");
-});
+export const aiConfigReady = Promise.all([
+  loadAiConfig().catch((err) => {
+    logger.error({ err }, "Could not load AI settings from the database; using .env defaults");
+  }),
+  loadVoiceConfig().catch((err) => {
+    logger.error({ err }, "Could not load voice settings from the database; using .env defaults");
+  }),
+]);
 
 /**
  * Vercel serverless entry. Vercel's Express preset picks src/app.ts and needs it

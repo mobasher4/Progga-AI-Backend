@@ -40,13 +40,16 @@ export interface EvalInput {
   reply: string;
 }
 
+/** Receives the model's raw JSON output so far, as it streams in ("" = starting over). */
+export type OnPartial = (jsonSoFar: string) => void;
+
 export interface TutorLLM {
   readonly name: string;
   readonly model: string;
   /** Whether homework photos can be sent to this engine. */
   readonly supportsImages: boolean;
-  plan(input: PlanInput): Promise<Plan>;
-  evaluate(input: EvalInput): Promise<Evaluation>;
+  plan(input: PlanInput, onPartial?: OnPartial): Promise<Plan>;
+  evaluate(input: EvalInput, onPartial?: OnPartial): Promise<Evaluation>;
   /** Re-localize an existing plan when the student switches language mid-session. */
   translatePlan(plan: Plan, language: string): Promise<Plan>;
   /** The NCTB chapters and topics for a class + subject. */
