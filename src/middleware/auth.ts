@@ -4,6 +4,29 @@ import { env } from "../config/env";
 import { forbidden, unauthorized } from "../lib/errors";
 
 export const AUTH_COOKIE = "progga_token";
+/** Holds the parent's session while a kid's profile is open on the same device, so the parent can switch back. */
+export const GUARDIAN_COOKIE = "progga_guardian";
+
+export function setSessionCookie(res: Response, name: string, token: string) {
+  res.cookie(name, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.isProd,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
+  });
+}
+
+/** Verifies a token without touching the request (e.g. the parked guardian session). */
+export function verifyToken(token: string | undefined): AuthUser | null {
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload;
+    return { id: String(payload.sub), role: payload.role as Role };
+  } catch {
+    return null;
+  }
+}
 
 export type Role = "STUDENT" | "PARENT" | "TEACHER" | "ADMIN";
 

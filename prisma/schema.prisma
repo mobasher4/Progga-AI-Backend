@@ -16,11 +16,16 @@ datasource db {
 
 model User {
   id              String   @id @default(cuid())
-  email           String   @unique
+  email           String?  @unique // email or phone signs in; kids added by a parent have neither
+  phone           String?  @unique // +8801XXXXXXXXX
   passwordHash    String
   name            String
   role            String   @default("STUDENT") // STUDENT | PARENT | TEACHER | ADMIN
   grade           Int? // 3..12 (11-12 = HSC). Students only.
+  birthdate       String? // YYYY-MM-DD
+  motivation      String? // excel | sharp | fun | help_child (picked at signup)
+  profile         Json     @default("{}") // about me, school, family, guardian… (shape in modules/users/profile.ts)
+  photoUpdatedAt  DateTime? // set while a profile photo exists; versions the photo URL
   language        String   @default("en") // en | bn
   avatarSkin      String   @default("classic")
   xp              Int      @default(0)
@@ -46,6 +51,16 @@ model User {
   battleProfiles BattleProfile[]
   battleTicket   BattleTicket?
   battlePlayers  BattlePlayer[]
+  photo          ProfilePhoto?
+}
+
+/// Profile picture, resized on the device before upload (small square JPEG/WebP).
+model ProfilePhoto {
+  userId    String   @id
+  mime      String
+  data      Bytes
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model GuardianLink {

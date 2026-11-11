@@ -3,8 +3,10 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma";
 import { addDays, dayKey, dayStartUtc } from "../../lib/dates";
 import { conflict, forbidden, notFound } from "../../lib/errors";
-import { authed, requireAuth, requireRole } from "../../middleware/auth";
+import { AUTH_COOKIE, GUARDIAN_COOKIE, authed, requireAuth, requireRole, setSessionCookie, signToken } from "../../middleware/auth";
 import { levelProgress } from "../gamification/levels";
+import { photoUrl, publicUser } from "../users/presenter";
+import { profileStatus, readProfile } from "../users/profile";
 import type { Plan, StepProgress } from "../tutor/schemas";
 
 // Parents and teachers see progress, learning habits and safety alerts for
@@ -36,6 +38,8 @@ guardianRouter.get("/students", async (req, res) => {
         name: s.name,
         grade: s.grade,
         avatarSkin: s.avatarSkin,
+        photoUrl: photoUrl(s),
+        profileStatus: profileStatus(s),
         level: levelProgress(s.xp),
         streak: s.streakDays,
         lastActive: s.lastActiveDate,
@@ -59,6 +63,17 @@ guardianRouter.post("/link", async (req, res) => {
   if (exists) throw conflict(`${student.name} is already linked`);
   await prisma.guardianLink.create({ data: { guardianId, studentId: student.id } });
   res.status(201).json({ student: { id: student.id, name: student.name, grade: student.grade } });
+});
+
+/** "Learn as Rafi": opens a linked kid's profile on this device and parks the parent's session for switching back. */
+guardianRouter.post("/students/:id/switch", async (req, res) => {
+  const me = authed(req);
+  const studentId = req.params.id as string;
+  await assertLinked(me.id, studentId);
+  const student = await prisma.user.findUniqueOrThrow({ where: { id: studentId } });
+  setSessionCookie(res, GUARDIAN_COOKIE, signToken(me));
+  setSessionCookie(res, AUTH_COOKIE, signToken({ id: student.id, role: "STUDENT" }));
+  res.json({ user: publicUser(student) });
 });
 
 guardianRouter.delete("/students/:id", async (req, res) => {
@@ -141,6 +156,9 @@ guardianRouter.get("/students/:id/report", async (req, res) => {
       name: student.name,
       grade: student.grade,
       avatarSkin: student.avatarSkin,
+      photoUrl: photoUrl(student),
+      profile: (({ rewardedAt: _, ...p }) => p)(readProfile(student)),
+      profileStatus: profileStatus(student),
       level: levelProgress(student.xp),
       streak: student.streakDays,
       bestStreak: student.bestStreak,

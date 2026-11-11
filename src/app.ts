@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/error";
 import { authRouter } from "./modules/auth/routes";
-import { usersRouter } from "./modules/users/routes";
+import { photosRouter, usersRouter } from "./modules/users/routes";
 import { subjectsRouter } from "./modules/subjects/routes";
 import { tutorRouter } from "./modules/tutor/routes";
 import { lessonsRouter } from "./modules/lessons/routes";
@@ -56,6 +56,7 @@ export function createApp() {
 
   app.use("/api/auth", authRouter);
   app.use("/api/me", usersRouter);
+  app.use("/api/photos", photosRouter);
   app.use("/api/subjects", subjectsRouter);
   app.use("/api/tutor", tutorRouter);
   app.use("/api/lessons", lessonsRouter);

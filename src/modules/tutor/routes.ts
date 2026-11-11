@@ -68,7 +68,7 @@ tutorRouter.delete("/sessions/:id", async (req, res) => {
 });
 
 // "Start a lesson": pick a class, a subject and one of its NCTB topics, and Progga teaches it from scratch.
-const SyllabusQuery = z.object({ grade: z.coerce.number().int().min(3).max(10), subject: z.string().min(1).max(40) });
+const SyllabusQuery = z.object({ grade: z.coerce.number().int().min(3).max(12), subject: z.string().min(1).max(40) });
 
 tutorRouter.get("/syllabus", aiLimiter, async (req, res) => {
   const { grade, subject } = SyllabusQuery.parse(req.query);
@@ -77,7 +77,7 @@ tutorRouter.get("/syllabus", aiLimiter, async (req, res) => {
 });
 
 const LessonBody = z.object({
-  grade: z.coerce.number().int().min(3).max(10),
+  grade: z.coerce.number().int().min(3).max(12),
   subject: z.string().min(1).max(40),
   topic: z.string().trim().min(2).max(160),
   chapter: z.string().trim().max(160).optional(),
